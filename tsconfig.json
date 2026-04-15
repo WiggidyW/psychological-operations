@@ -11,5 +11,7 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
-  }
+  },
+  "include": ["src"],
+  "exclude": ["objectiveai", "node_modules", "dist"]
 }
