@@ -54,6 +54,10 @@ export class Db {
     })) as Post[];
   }
 
+  clearPosts(scrapeId: string): void {
+    this.db.prepare("DELETE FROM posts WHERE scrape_id = ?").run(scrapeId);
+  }
+
   close(): void {
     this.db.close();
   }
