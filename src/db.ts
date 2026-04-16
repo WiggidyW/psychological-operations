@@ -133,6 +133,13 @@ export class Db {
     })) as CompletedPost[];
   }
 
+  hasCompletedPost(id: string, query: string, psyop: string, psyopCommitSha: string): boolean {
+    const row = this.db.prepare(
+      "SELECT 1 FROM posts_completed WHERE id = ? AND query = ? AND psyop = ? AND psyop_commit_sha = ?",
+    ).get(id, query, psyop, psyopCommitSha);
+    return row !== undefined;
+  }
+
   close(): void {
     this.db.close();
   }
