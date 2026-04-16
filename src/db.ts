@@ -74,7 +74,12 @@ export class Db {
     this.db.exec(SCHEMA);
   }
 
-  insertPost(post: Omit<QueuedPost, "scraped_at">): void {
+  insertPost(post: Omit<QueuedPost, "scraped_at">): boolean {
+    const existing = this.db.prepare(
+      "SELECT 1 FROM posts_completed WHERE id = ? AND psyop = ? AND psyop_commit_sha = ?",
+    ).get(post.id, post.psyop, post.psyop_commit_sha);
+    if (existing) return false;
+
     this.db.prepare(`
       INSERT OR IGNORE INTO posts_queue (id, scrape_id, handle, text, images, videos, created, community, psyop, psyop_commit_sha)
       VALUES (@id, @scrape_id, @handle, @text, @images, @videos, @created, @community, @psyop, @psyop_commit_sha)
@@ -83,6 +88,7 @@ export class Db {
       images: JSON.stringify(post.images),
       videos: JSON.stringify(post.videos),
     });
+    return true;
   }
 
   getPosts(scrapeId: string): QueuedPost[] {
