@@ -1,9 +1,14 @@
-import type { Page } from "playwright-core";
+import { chromium } from "playwright-core";
+import path from "node:path";
+import os from "node:os";
 import type {
   AgentCompletionsMessageRichContent,
   AgentCompletionsMessageRichContentPart,
 } from "objectiveai";
 import type { Db } from "./db.js";
+import type { PsyOp } from "./psyop.js";
+
+const USER_DATA_DIR = path.join(os.homedir(), ".psychological-operations", "chrome-data");
 
 interface TweetData {
   id: string;
@@ -71,7 +76,6 @@ function buildContent(
   imageUrls: string[],
   videoUrls: string[],
 ): AgentCompletionsMessageRichContent {
-  // Text-only tweets can be a plain string.
   if (imageUrls.length === 0 && videoUrls.length === 0) {
     return text;
   }
@@ -121,16 +125,31 @@ async function parseTweet(article: import("playwright-core").Locator): Promise<T
 }
 
 /**
- * Scrape tweets from the current X search results page.
- * Scrolls down to load more tweets until `maxPosts` is reached
- * or no new tweets appear.
+ * Open a browser, navigate to X search, and scrape tweets.
+ * Uses the first stage's count as the target number of posts.
  */
 export async function scrape(
-  page: Page,
+  psyop: PsyOp,
+  name: string,
   db: Db,
-  scrapeId: string,
-  maxPosts: number = 100,
 ): Promise<number> {
+  const maxPosts = psyop.stages[0]!.count;
+
+  const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+    headless: false,
+    channel: "chrome",
+    args: [
+      "--remote-debugging-port=9222",
+      "--disable-blink-features=AutomationControlled",
+    ],
+  });
+
+  const page = context.pages()[0] ?? await context.newPage();
+
+  const url = `https://x.com/search?q=${encodeURIComponent(psyop.query)}&src=typed_query&f=live`;
+  console.log(`Searching X for: ${psyop.query}`);
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+
   const seen = new Set<string>();
   let staleScrolls = 0;
 
@@ -147,7 +166,7 @@ export async function scrape(
       if (!tweet || seen.has(tweet.id)) continue;
 
       seen.add(tweet.id);
-      db.insertPost({ ...tweet, scrape_id: scrapeId });
+      db.insertPost({ ...tweet, scrape_id: name });
       console.log(`[${seen.size}] @${tweet.handle}: ${typeof tweet.content === "string" ? tweet.content.slice(0, 80) : "(media)"}`);
     }
 
@@ -157,11 +176,11 @@ export async function scrape(
       staleScrolls = 0;
     }
 
-    // Scroll down to load more tweets
     await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2));
     await page.waitForTimeout(2000);
   }
 
+  await context.close();
   console.log(`Scraped ${seen.size} tweets.`);
   return seen.size;
 }
