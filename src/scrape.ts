@@ -107,7 +107,7 @@ export async function scrape(
   psyopCommitSha: string,
   db: Db,
 ): Promise<number> {
-  const maxPosts = psyop.stages[0]!.count;
+  const maxPosts = psyop.stages[0]!.count ?? 100;
 
   const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
     headless: false,
