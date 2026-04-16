@@ -1,6 +1,5 @@
 # psychological-operations
 
-> **Note:** Ronald is currently experiencing some sort of psychosis and is overwhelmed with strange ideas, so development is going slowly until this is resolved.
 
 An agent that uses computer use to browse [X](https://x.com), searching for tweets that match user-defined criteria. It finds tweets worth replying to by scoring and ranking them through a two-pass analysis pipeline powered by [ObjectiveAI](https://github.com/ObjectiveAI/objectiveai).
 
