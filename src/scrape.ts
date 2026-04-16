@@ -2,8 +2,8 @@ import { chromium } from "playwright-core";
 import path from "node:path";
 import os from "node:os";
 import type {
-  AgentCompletionsMessageRichContent,
-  AgentCompletionsMessageRichContentPart,
+  AgentCompletionsMessageImageUrl,
+  AgentCompletionsMessageVideoUrl,
 } from "objectiveai";
 import type { Db } from "./db.js";
 import type { PsyOp } from "./psyop.js";
@@ -13,7 +13,9 @@ const USER_DATA_DIR = path.join(os.homedir(), ".psychological-operations", "chro
 interface TweetData {
   id: string;
   handle: string;
-  content: AgentCompletionsMessageRichContent;
+  text: string;
+  images: AgentCompletionsMessageImageUrl[];
+  videos: AgentCompletionsMessageVideoUrl[];
   created: string;
   community: string | null;
 }
@@ -46,51 +48,28 @@ async function getText(article: import("playwright-core").Locator): Promise<stri
   return await tweetText.textContent().catch(() => "") ?? "";
 }
 
-/** Extract image URLs from a tweet. */
-async function getImages(article: import("playwright-core").Locator): Promise<string[]> {
+/** Extract images from a tweet. */
+async function getImages(article: import("playwright-core").Locator): Promise<AgentCompletionsMessageImageUrl[]> {
   const imgs = article.locator('[data-testid="tweetPhoto"] img');
   const count = await imgs.count();
-  const urls: string[] = [];
+  const results: AgentCompletionsMessageImageUrl[] = [];
   for (let i = 0; i < count; i++) {
     const src = await imgs.nth(i).getAttribute("src").catch(() => null);
-    if (src) urls.push(src);
+    if (src) results.push({ url: src });
   }
-  return urls;
+  return results;
 }
 
-/** Extract video URLs from a tweet. */
-async function getVideos(article: import("playwright-core").Locator): Promise<string[]> {
-  const videos = article.locator("video");
-  const count = await videos.count();
-  const urls: string[] = [];
+/** Extract videos from a tweet. */
+async function getVideos(article: import("playwright-core").Locator): Promise<AgentCompletionsMessageVideoUrl[]> {
+  const vids = article.locator("video");
+  const count = await vids.count();
+  const results: AgentCompletionsMessageVideoUrl[] = [];
   for (let i = 0; i < count; i++) {
-    const src = await videos.nth(i).getAttribute("src").catch(() => null);
-    if (src) urls.push(src);
+    const src = await vids.nth(i).getAttribute("src").catch(() => null);
+    if (src) results.push({ url: src });
   }
-  return urls;
-}
-
-/** Build a RichContent value from text, images, and videos. */
-function buildContent(
-  text: string,
-  imageUrls: string[],
-  videoUrls: string[],
-): AgentCompletionsMessageRichContent {
-  if (imageUrls.length === 0 && videoUrls.length === 0) {
-    return text;
-  }
-
-  const parts: AgentCompletionsMessageRichContentPart[] = [];
-  if (text) {
-    parts.push({ type: "text", text });
-  }
-  for (const url of imageUrls) {
-    parts.push({ type: "image_url", image_url: { url } });
-  }
-  for (const url of videoUrls) {
-    parts.push({ type: "video_url", video_url: { url } });
-  }
-  return parts;
+  return results;
 }
 
 /** Extract community note text if present. */
@@ -107,7 +86,7 @@ async function parseTweet(article: import("playwright-core").Locator): Promise<T
   const handle = await getHandle(article);
   if (!handle) return null;
 
-  const [created, text, imageUrls, videoUrls, community] = await Promise.all([
+  const [created, text, images, videos, community] = await Promise.all([
     getCreated(article),
     getText(article),
     getImages(article),
@@ -115,13 +94,7 @@ async function parseTweet(article: import("playwright-core").Locator): Promise<T
     getCommunity(article),
   ]);
 
-  return {
-    id,
-    handle,
-    content: buildContent(text, imageUrls, videoUrls),
-    created,
-    community,
-  };
+  return { id, handle, text, images, videos, created, community };
 }
 
 /**
@@ -168,7 +141,7 @@ export async function scrape(
 
       seen.add(tweet.id);
       db.insertPost({ ...tweet, scrape_id: name, psyop: name, psyop_commit_sha: psyopCommitSha });
-      console.log(`[${seen.size}] @${tweet.handle}: ${typeof tweet.content === "string" ? tweet.content.slice(0, 80) : "(media)"}`);
+      console.log(`[${seen.size}] @${tweet.handle}: ${tweet.text.slice(0, 80)}`);
     }
 
     if (seen.size === prevSize) {

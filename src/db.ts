@@ -1,7 +1,10 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import os from "node:os";
-import type { AgentCompletionsMessageRichContent } from "objectiveai";
+import type {
+  AgentCompletionsMessageImageUrl,
+  AgentCompletionsMessageVideoUrl,
+} from "objectiveai";
 
 const DB_PATH = path.join(os.homedir(), ".psychological-operations", "data.db");
 
@@ -10,7 +13,9 @@ const SCHEMA = `
     id TEXT PRIMARY KEY,
     scrape_id TEXT NOT NULL,
     handle TEXT NOT NULL,
-    content TEXT NOT NULL,
+    text TEXT NOT NULL,
+    images TEXT NOT NULL DEFAULT '[]',
+    videos TEXT NOT NULL DEFAULT '[]',
     created TEXT NOT NULL,
     community TEXT,
     psyop TEXT NOT NULL,
@@ -20,7 +25,9 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS posts_completed (
     id TEXT PRIMARY KEY,
     scrape_id TEXT NOT NULL,
-    content TEXT NOT NULL,
+    text TEXT NOT NULL,
+    images TEXT NOT NULL DEFAULT '[]',
+    videos TEXT NOT NULL DEFAULT '[]',
     created TEXT NOT NULL,
     community TEXT,
     score REAL NOT NULL,
@@ -34,7 +41,9 @@ export interface QueuedPost {
   id: string;
   scrape_id: string;
   handle: string;
-  content: AgentCompletionsMessageRichContent;
+  text: string;
+  images: AgentCompletionsMessageImageUrl[];
+  videos: AgentCompletionsMessageVideoUrl[];
   created: string;
   community: string | null;
   psyop: string;
@@ -45,7 +54,9 @@ export interface QueuedPost {
 export interface CompletedPost {
   id: string;
   scrape_id: string;
-  content: AgentCompletionsMessageRichContent;
+  text: string;
+  images: AgentCompletionsMessageImageUrl[];
+  videos: AgentCompletionsMessageVideoUrl[];
   created: string;
   community: string | null;
   score: number;
@@ -65,11 +76,12 @@ export class Db {
 
   insertPost(post: Omit<QueuedPost, "scraped_at">): void {
     this.db.prepare(`
-      INSERT OR IGNORE INTO posts_queue (id, scrape_id, handle, content, created, community, psyop, psyop_commit_sha)
-      VALUES (@id, @scrape_id, @handle, @content, @created, @community, @psyop, @psyop_commit_sha)
+      INSERT OR IGNORE INTO posts_queue (id, scrape_id, handle, text, images, videos, created, community, psyop, psyop_commit_sha)
+      VALUES (@id, @scrape_id, @handle, @text, @images, @videos, @created, @community, @psyop, @psyop_commit_sha)
     `).run({
       ...post,
-      content: JSON.stringify(post.content),
+      images: JSON.stringify(post.images),
+      videos: JSON.stringify(post.videos),
     });
   }
 
@@ -77,19 +89,20 @@ export class Db {
     const rows = this.db.prepare("SELECT * FROM posts_queue WHERE scrape_id = ? ORDER BY scraped_at DESC").all(scrapeId);
     return (rows as Array<Record<string, unknown>>).map((row) => ({
       ...row,
-      content: JSON.parse(row["content"] as string) as AgentCompletionsMessageRichContent,
+      images: JSON.parse(row["images"] as string) as AgentCompletionsMessageImageUrl[],
+      videos: JSON.parse(row["videos"] as string) as AgentCompletionsMessageVideoUrl[],
     })) as QueuedPost[];
   }
 
-  finishPosts(ids: string[], scores: number[], scrapeId: string): void {
+  finishPosts(ids: string[], scores: number[]): void {
     const move = this.db.transaction(() => {
       for (let i = 0; i < ids.length; i++) {
         const row = this.db.prepare("SELECT * FROM posts_queue WHERE id = ?").get(ids[i]!) as Record<string, unknown> | undefined;
         if (!row) continue;
 
         this.db.prepare(`
-          INSERT OR IGNORE INTO posts_completed (id, scrape_id, content, created, community, score, psyop, psyop_commit_sha, scraped_at)
-          VALUES (@id, @scrape_id, @content, @created, @community, @score, @psyop, @psyop_commit_sha, @scraped_at)
+          INSERT OR IGNORE INTO posts_completed (id, scrape_id, text, images, videos, created, community, score, psyop, psyop_commit_sha, scraped_at)
+          VALUES (@id, @scrape_id, @text, @images, @videos, @created, @community, @score, @psyop, @psyop_commit_sha, @scraped_at)
         `).run({
           ...row,
           score: scores[i]!,
@@ -105,7 +118,8 @@ export class Db {
     const rows = this.db.prepare("SELECT * FROM posts_completed WHERE scrape_id = ? ORDER BY score DESC").all(scrapeId);
     return (rows as Array<Record<string, unknown>>).map((row) => ({
       ...row,
-      content: JSON.parse(row["content"] as string) as AgentCompletionsMessageRichContent,
+      images: JSON.parse(row["images"] as string) as AgentCompletionsMessageImageUrl[],
+      videos: JSON.parse(row["videos"] as string) as AgentCompletionsMessageVideoUrl[],
     })) as CompletedPost[];
   }
 
