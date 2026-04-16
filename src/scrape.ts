@@ -107,7 +107,7 @@ export async function scrape(
   psyopCommitSha: string,
   db: Db,
 ): Promise<number> {
-  const maxPosts = psyop.stages[0]!.count ?? 100;
+  const maxPerQuery = Math.ceil((psyop.stages[0]!.count ?? 100) / psyop.queries.length);
 
   const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
     headless: false,
@@ -119,39 +119,42 @@ export async function scrape(
   });
 
   const page = context.pages()[0] ?? await context.newPage();
-
-  const url = `https://x.com/search?q=${encodeURIComponent(psyop.query)}&src=typed_query&f=live`;
-  console.log(`Searching X for: ${psyop.query}`);
-  await page.goto(url, { waitUntil: "domcontentloaded" });
-
   const seen = new Set<string>();
-  let staleScrolls = 0;
 
-  while (seen.size < maxPosts && staleScrolls < 5) {
-    const articles = page.locator("article");
-    const count = await articles.count();
-    const prevSize = seen.size;
+  for (const query of psyop.queries) {
+    const url = `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=live`;
+    console.log(`Searching X for: ${query}`);
+    await page.goto(url, { waitUntil: "domcontentloaded" });
 
-    for (let i = 0; i < count; i++) {
-      if (seen.size >= maxPosts) break;
+    let staleScrolls = 0;
+    const queryStart = seen.size;
 
-      const article = articles.nth(i);
-      const tweet = await parseTweet(article);
-      if (!tweet || seen.has(tweet.id)) continue;
+    while (seen.size - queryStart < maxPerQuery && staleScrolls < 5) {
+      const articles = page.locator("article");
+      const count = await articles.count();
+      const prevSize = seen.size;
 
-      seen.add(tweet.id);
-      db.insertPost({ ...tweet, scrape_id: name, query: psyop.query, psyop: name, psyop_commit_sha: psyopCommitSha });
-      console.log(`[${seen.size}] @${tweet.handle}: ${tweet.text.slice(0, 80)}`);
+      for (let i = 0; i < count; i++) {
+        if (seen.size - queryStart >= maxPerQuery) break;
+
+        const article = articles.nth(i);
+        const tweet = await parseTweet(article);
+        if (!tweet || seen.has(tweet.id)) continue;
+
+        seen.add(tweet.id);
+        db.insertPost({ ...tweet, scrape_id: name, query, psyop: name, psyop_commit_sha: psyopCommitSha });
+        console.log(`[${seen.size}] @${tweet.handle}: ${tweet.text.slice(0, 80)}`);
+      }
+
+      if (seen.size === prevSize) {
+        staleScrolls++;
+      } else {
+        staleScrolls = 0;
+      }
+
+      await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2));
+      await page.waitForTimeout(2000);
     }
-
-    if (seen.size === prevSize) {
-      staleScrolls++;
-    } else {
-      staleScrolls = 0;
-    }
-
-    await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2));
-    await page.waitForTimeout(2000);
   }
 
   await context.close();
