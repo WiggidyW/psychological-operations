@@ -11,6 +11,7 @@ export const StageSchema = z.object({
   profile: FunctionsInlineProfileOrRemoteCommitOptionalSchema,
   strategy: FunctionsExecutionsRequestStrategySchema,
   count: z.number().int().positive(),
+  threshold: z.number().min(0).max(1),
 });
 
 export type Stage = z.infer<typeof StageSchema>;
