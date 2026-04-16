@@ -131,6 +131,7 @@ async function parseTweet(article: import("playwright-core").Locator): Promise<T
 export async function scrape(
   psyop: PsyOp,
   name: string,
+  psyopCommitSha: string,
   db: Db,
 ): Promise<number> {
   const maxPosts = psyop.stages[0]!.count;
@@ -166,7 +167,7 @@ export async function scrape(
       if (!tweet || seen.has(tweet.id)) continue;
 
       seen.add(tweet.id);
-      db.insertPost({ ...tweet, scrape_id: name });
+      db.insertPost({ ...tweet, scrape_id: name, psyop: name, psyop_commit_sha: psyopCommitSha });
       console.log(`[${seen.size}] @${tweet.handle}: ${typeof tweet.content === "string" ? tweet.content.slice(0, 80) : "(media)"}`);
     }
 
