@@ -140,7 +140,7 @@ export async function scrape(
       if (!tweet || seen.has(tweet.id)) continue;
 
       seen.add(tweet.id);
-      db.insertPost({ ...tweet, scrape_id: name, psyop: name, psyop_commit_sha: psyopCommitSha });
+      db.insertPost({ ...tweet, scrape_id: name, query: psyop.query, psyop: name, psyop_commit_sha: psyopCommitSha });
       console.log(`[${seen.size}] @${tweet.handle}: ${tweet.text.slice(0, 80)}`);
     }
 
