@@ -27,3 +27,22 @@ export const PsyOpSchema = z.object({
 });
 
 export type PsyOp = z.infer<typeof PsyOpSchema>;
+
+export type ValidationResult =
+  | { valid: true }
+  | { valid: false; reason: "max_age" | "min_likes" };
+
+export function validForPsyop(
+  psyop: PsyOp,
+  post: { created: string; likes: number },
+  now: Date,
+): ValidationResult {
+  if (psyop.max_age != null) {
+    const ageSeconds = (now.getTime() - new Date(post.created).getTime()) / 1000;
+    if (ageSeconds > psyop.max_age) return { valid: false, reason: "max_age" };
+  }
+  if (psyop.min_likes != null) {
+    if (post.likes < psyop.min_likes) return { valid: false, reason: "min_likes" };
+  }
+  return { valid: true };
+}
