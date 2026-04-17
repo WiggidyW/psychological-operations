@@ -11,6 +11,33 @@ import { validForPsyop, type PsyOp } from "./psyop.js";
 
 const USER_DATA_DIR = path.join(os.homedir(), ".psychological-operations", "chrome-data");
 
+type PageState = "results" | "empty";
+
+/**
+ * Validate the page after navigation.
+ * Races article appearing against the page fully settling.
+ * If articles appear first → "results".
+ * If the page settles without articles, checks for "No results for" → "empty".
+ * Anything else throws.
+ */
+async function validatePage(page: Page, query: string): Promise<PageState> {
+  const result = await Promise.race([
+    page.locator("article").first().waitFor({ timeout: 0 }).then(() => "results" as const),
+    page.waitForLoadState("networkidle").then(() => "settled" as const),
+  ]);
+
+  if (result === "results") return "results";
+
+  // Page settled without articles — check if it's a known empty state
+  const noResults = await page.getByText(/No results for/).first().isVisible().catch(() => false);
+  if (noResults) return "empty";
+
+  throw new Error(
+    `Unexpected page state for query "${query}" at ${page.url()}. ` +
+    `This could be a login wall, captcha, or other unexpected page.`,
+  );
+}
+
 interface TweetData {
   id: string;
   handle: string;
@@ -201,6 +228,14 @@ export async function scrape(
     const url = `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=live`;
     console.log(`Opening tab for: ${query}`);
     await page.goto(url, { waitUntil: "domcontentloaded" });
+
+    const state = await validatePage(page, query);
+    if (state === "empty") {
+      console.log(`No results for query "${query}" — skipping.`);
+      await page.close();
+      continue;
+    }
+
     tabs.push({ query, page, buffer: [], seen: new Set(), open: true, staleScrolls: 0 });
   }
 
