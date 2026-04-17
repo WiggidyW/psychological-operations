@@ -21,3 +21,8 @@ export function loadConfig(): Config {
   const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) as unknown;
   return ConfigSchema.parse(raw);
 }
+
+export function saveConfig(config: Config): void {
+  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");
+}
