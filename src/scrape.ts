@@ -56,6 +56,25 @@ async function getCreated(article: import("playwright-core").Locator): Promise<s
 
 async function getText(article: import("playwright-core").Locator): Promise<string> {
   const tweetText = article.locator('[data-testid="tweetText"]').first();
+
+  // Expand truncated tweets
+  const showMore = article.getByRole("button", { name: /Show more/i }).first();
+  if (await showMore.isVisible().catch(() => false)) {
+    const before = await tweetText.textContent().catch(() => "") ?? "";
+    await showMore.click();
+    // Wait for the text to actually change
+    await tweetText.evaluate(
+      (el, prev) => new Promise<void>((resolve) => {
+        if (el.textContent !== prev) { resolve(); return; }
+        const obs = new MutationObserver(() => {
+          if (el.textContent !== prev) { obs.disconnect(); resolve(); }
+        });
+        obs.observe(el, { childList: true, subtree: true, characterData: true });
+      }),
+      before,
+    ).catch(() => {});
+  }
+
   return await tweetText.textContent().catch(() => "") ?? "";
 }
 
