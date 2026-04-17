@@ -244,7 +244,7 @@ export async function scrape(
 
     if (!inserted) {
       // Already completed for this query — check if we should close the tab
-      if (db.hasCompletedPost(tweet.id, tab.query, name, psyopCommitSha)) {
+      if (db.hasExistingPost(tweet.id, tab.query, name, psyopCommitSha)) {
         console.log(`Closing query "${tab.query}" — reached previously completed posts.`);
         tab.open = false;
       }

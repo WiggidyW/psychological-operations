@@ -79,10 +79,15 @@ export class Db {
   }
 
   insertPost(post: Omit<QueuedPost, "scraped_at">): boolean {
-    const existing = this.db.prepare(
+    const inCompleted = this.db.prepare(
       "SELECT 1 FROM posts_completed WHERE id = ? AND psyop = ? AND psyop_commit_sha = ?",
     ).get(post.id, post.psyop, post.psyop_commit_sha);
-    if (existing) return false;
+    if (inCompleted) return false;
+
+    const inQueue = this.db.prepare(
+      "SELECT 1 FROM posts_queue WHERE id = ? AND psyop = ? AND psyop_commit_sha = ?",
+    ).get(post.id, post.psyop, post.psyop_commit_sha);
+    if (inQueue) return false;
 
     this.db.prepare(`
       INSERT OR IGNORE INTO posts_queue (id, scrape_id, query, handle, text, images, videos, created, community, psyop, psyop_commit_sha)
@@ -133,11 +138,16 @@ export class Db {
     })) as CompletedPost[];
   }
 
-  hasCompletedPost(id: string, query: string, psyop: string, psyopCommitSha: string): boolean {
-    const row = this.db.prepare(
+  hasExistingPost(id: string, query: string, psyop: string, psyopCommitSha: string): boolean {
+    const inCompleted = this.db.prepare(
       "SELECT 1 FROM posts_completed WHERE id = ? AND query = ? AND psyop = ? AND psyop_commit_sha = ?",
     ).get(id, query, psyop, psyopCommitSha);
-    return row !== undefined;
+    if (inCompleted) return true;
+
+    const inQueue = this.db.prepare(
+      "SELECT 1 FROM posts_queue WHERE id = ? AND query = ? AND psyop = ? AND psyop_commit_sha = ?",
+    ).get(id, query, psyop, psyopCommitSha);
+    return inQueue !== undefined;
   }
 
   close(): void {
