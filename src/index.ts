@@ -8,11 +8,15 @@ import { ObjectiveAI } from "objectiveai";
 import { PsyOpSchema } from "./psyop.js";
 import { Db } from "./db.js";
 import { scrape } from "./scrape.js";
+import { loadConfig } from "./config.js";
+import { notify } from "./notifications/index.js";
 import { buildCli } from "./cli.js";
 
 const PSYOPS_DIR = path.join(os.homedir(), ".psychological-operations", "psyops");
 
 export async function main(name: string): Promise<void> {
+  const config = loadConfig();
+
   const configPath = path.join(PSYOPS_DIR, name, "psyop.json");
   if (!fs.existsSync(configPath)) {
     console.error(`PsyOp not found: ${configPath}`);
@@ -28,7 +32,8 @@ export async function main(name: string): Promise<void> {
   const client = new ObjectiveAI();
   const db = new Db();
   try {
-    await scrape(client, psyop, name, commitSha, db);
+    const count = await scrape(client, psyop, name, commitSha, db, config);
+    await notify(config.notifications, `PsyOp "${name}": scraped ${count} posts.`);
   } finally {
     db.close();
   }

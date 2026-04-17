@@ -7,8 +7,7 @@ import {
   type AgentInlineAgentBaseWithFallbacksOrRemoteCommitOptional,
 } from "objectiveai";
 
-const MAX_RETRIES = 3;
-const USER_INPUT_TIMEOUT_MS = 3 * 60 * 1000;
+import type { Config } from "./config.js";
 
 /** Find an available port. */
 async function findPort(): Promise<number> {
@@ -132,6 +131,7 @@ export async function intervene(
   agent: AgentInlineAgentBaseWithFallbacksOrRemoteCommitOptional,
   query: string,
   pageUrl: string,
+  config: Config,
 ): Promise<void> {
   const port = await findPort();
   const mcpProc = await startMcpServer(port);
@@ -150,17 +150,20 @@ export async function intervene(
   let userMessage = "Please observe the current page state and try to resolve the issue.";
 
   try {
-    while (retries < MAX_RETRIES) {
-      console.log(`Agent intervention attempt ${retries + 1}/${MAX_RETRIES}...`);
+    const maxAttempts = config.agent_max_attempts;
+    const timeoutMs = config.agent_timeout * 1000;
+
+    while (retries < maxAttempts) {
+      console.log(`Agent intervention attempt ${retries + 1}/${maxAttempts}...`);
       await runAgent(client, agent, mcpUrl, systemPrompt, userMessage);
 
       // Check if we can return (caller will re-validate)
       retries++;
-      if (retries >= MAX_RETRIES) break;
+      if (retries >= maxAttempts) break;
 
       // Wait for user input
-      console.log(`Agent finished. Waiting ${USER_INPUT_TIMEOUT_MS / 60_000} minutes for user guidance...`);
-      const input = await promptUser(USER_INPUT_TIMEOUT_MS);
+      console.log(`Agent finished. Waiting ${config.agent_timeout} seconds for user guidance...`);
+      const input = await promptUser(timeoutMs);
       if (input !== null) {
         retries = 0;
         userMessage = input;

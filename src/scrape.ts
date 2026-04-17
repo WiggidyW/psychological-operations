@@ -10,6 +10,7 @@ import { ObjectiveAI } from "objectiveai";
 import type { Db } from "./db.js";
 import { validForPsyop, type PsyOp } from "./psyop.js";
 import { intervene } from "./intervene.js";
+import type { Config } from "./config.js";
 
 const USER_DATA_DIR = path.join(os.homedir(), ".psychological-operations", "chrome-data");
 
@@ -208,6 +209,7 @@ export async function scrape(
   name: string,
   psyopCommitSha: string,
   db: Db,
+  config: Config,
 ): Promise<number> {
   const targetCount = psyop.stages[0]!.count ?? 100;
   const now = new Date();
@@ -232,7 +234,7 @@ export async function scrape(
     let state = await validatePage(page);
     if (state === "unexpected") {
       console.log(`Unexpected page state for query "${query}" — spawning agent...`);
-      await intervene(client, psyop.agent, query, page.url());
+      await intervene(client, psyop.agent, query, page.url(), config);
       state = await validatePage(page);
       if (state === "unexpected") {
         throw new Error(`Agent could not resolve unexpected page state for query "${query}" at ${page.url()}`);
