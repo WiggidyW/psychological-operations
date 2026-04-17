@@ -1,19 +1,37 @@
+import { z } from "zod";
 import { sendDiscord } from "./discord.js";
 import { sendTelegram } from "./telegram.js";
 
-export interface NotificationConfig {
-  discord?: { webhook_url: string };
-  telegram?: { bot_token: string; chat_id: string };
-}
+const DiscordNotificationSchema = z.object({
+  type: z.literal("discord"),
+  webhook_url: z.string(),
+});
 
-export async function notify(config: NotificationConfig, message: string): Promise<void> {
+const TelegramNotificationSchema = z.object({
+  type: z.literal("telegram"),
+  bot_token: z.string(),
+  chat_id: z.string(),
+});
+
+export const NotificationConfigSchema = z.discriminatedUnion("type", [
+  DiscordNotificationSchema,
+  TelegramNotificationSchema,
+]);
+
+export type NotificationConfig = z.infer<typeof NotificationConfigSchema>;
+
+export async function notify(configs: NotificationConfig[], message: string): Promise<void> {
   const tasks: Promise<void>[] = [];
 
-  if (config.discord) {
-    tasks.push(sendDiscord(config.discord.webhook_url, message));
-  }
-  if (config.telegram) {
-    tasks.push(sendTelegram(config.telegram.bot_token, config.telegram.chat_id, message));
+  for (const config of configs) {
+    switch (config.type) {
+      case "discord":
+        tasks.push(sendDiscord(config.webhook_url, message));
+        break;
+      case "telegram":
+        tasks.push(sendTelegram(config.bot_token, config.chat_id, message));
+        break;
+    }
   }
 
   const results = await Promise.allSettled(tasks);
