@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
+import { ObjectiveAI } from "objectiveai";
 import { PsyOpSchema } from "./psyop.js";
 import { Db } from "./db.js";
 import { scrape } from "./scrape.js";
@@ -29,9 +30,10 @@ async function main() {
   const psyopDir = path.join(PSYOPS_DIR, PSYOP_NAME);
   const commitSha = execSync("git rev-parse HEAD", { cwd: psyopDir, encoding: "utf-8" }).trim();
 
+  const client = new ObjectiveAI();
   const db = new Db();
   try {
-    await scrape(psyop, PSYOP_NAME, commitSha, db);
+    await scrape(client, psyop, PSYOP_NAME, commitSha, db);
   } finally {
     db.close();
   }

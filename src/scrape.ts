@@ -6,21 +6,23 @@ import type {
   AgentCompletionsMessageImageUrl,
   AgentCompletionsMessageVideoUrl,
 } from "objectiveai";
+import { ObjectiveAI } from "objectiveai";
 import type { Db } from "./db.js";
 import { validForPsyop, type PsyOp } from "./psyop.js";
+import { intervene } from "./intervene.js";
 
 const USER_DATA_DIR = path.join(os.homedir(), ".psychological-operations", "chrome-data");
 
-type PageState = "results" | "empty";
+type PageState = "results" | "empty" | "unexpected";
 
 /**
  * Validate the page after navigation.
  * Races article appearing against the page fully settling.
  * If articles appear first → "results".
  * If the page settles without articles, checks for "No results for" → "empty".
- * Anything else throws.
+ * Anything else → "unexpected".
  */
-async function validatePage(page: Page, query: string): Promise<PageState> {
+async function validatePage(page: Page): Promise<PageState> {
   const result = await Promise.race([
     page.locator("article").first().waitFor({ timeout: 0 }).then(() => "results" as const),
     page.waitForLoadState("networkidle").then(() => "settled" as const),
@@ -32,10 +34,7 @@ async function validatePage(page: Page, query: string): Promise<PageState> {
   const noResults = await page.getByText(/No results for/).first().isVisible().catch(() => false);
   if (noResults) return "empty";
 
-  throw new Error(
-    `Unexpected page state for query "${query}" at ${page.url()}. ` +
-    `This could be a login wall, captcha, or other unexpected page.`,
-  );
+  return "unexpected";
 }
 
 interface TweetData {
@@ -204,6 +203,7 @@ function pickNewest(tabs: QueryTab[]): { tab: QueryTab; tweet: TweetData } | nul
  * This case needs handling once we decide what to do (retry, warn, etc.).
  */
 export async function scrape(
+  client: ObjectiveAI,
   psyop: PsyOp,
   name: string,
   psyopCommitSha: string,
@@ -229,7 +229,15 @@ export async function scrape(
     console.log(`Opening tab for: ${query}`);
     await page.goto(url, { waitUntil: "domcontentloaded" });
 
-    const state = await validatePage(page, query);
+    let state = await validatePage(page);
+    if (state === "unexpected") {
+      console.log(`Unexpected page state for query "${query}" — spawning agent...`);
+      await intervene(client, psyop.agent, query, page.url());
+      state = await validatePage(page);
+      if (state === "unexpected") {
+        throw new Error(`Agent could not resolve unexpected page state for query "${query}" at ${page.url()}`);
+      }
+    }
     if (state === "empty") {
       console.log(`No results for query "${query}" — skipping.`);
       await page.close();
