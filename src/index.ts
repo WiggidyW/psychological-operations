@@ -3,7 +3,7 @@
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
-import { execSync } from "node:child_process";
+import git from "isomorphic-git";
 import { ObjectiveAI } from "objectiveai";
 import { PsyOpSchema } from "./psyop.js";
 import { Db } from "./db.js";
@@ -28,7 +28,7 @@ async function main() {
   const psyop = PsyOpSchema.parse(raw);
 
   const psyopDir = path.join(PSYOPS_DIR, PSYOP_NAME);
-  const commitSha = execSync("git rev-parse HEAD", { cwd: psyopDir, encoding: "utf-8" }).trim();
+  const commitSha = await git.resolveRef({ fs, dir: psyopDir, ref: "HEAD" });
 
   const client = new ObjectiveAI();
   const db = new Db();

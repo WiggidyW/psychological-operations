@@ -19,6 +19,7 @@
   "dependencies": {
     "@playwright/mcp": "^0.0.70",
     "better-sqlite3": "^12.9.0",
+    "isomorphic-git": "^1.37.5",
     "objectiveai": "file:objectiveai/objectiveai-js",
     "playwright-core": "^1.52.0",
     "zod": "^4.3.6"
