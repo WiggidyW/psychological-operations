@@ -19,6 +19,11 @@ The ObjectiveAI Function is invented (generated) based on user-specified criteri
 
 Profiles can be improved over time through feedback. When the user indicates which results were good or bad, the ObjectiveAI profile computation endpoint refines the profile to better identify the type of tweets the user is looking for. This uses ObjectiveAI credits.
 
+## System requirements
+
+- **Windows**: Windows 10 build 17063 or later (required for Unix domain socket support)
+- **macOS / Linux**: Any modern version
+
 ## LLM credits
 
 The agent's LLM usage (for computer use and tweet analysis) can be funded through:

@@ -3,6 +3,7 @@ import net from "node:net";
 import readline from "node:readline";
 import type { AgentInlineAgentBaseWithFallbacksOrRemoteCommitOptional } from "objectiveai";
 import { runAgentCompletion, getAgentContinuation, fetchAgent } from "./cli_exec.js";
+import { waitForMessage, cleanupSocket } from "./ipc.js";
 import type { Config } from "./config.js";
 
 /** Find an available port. */
@@ -29,7 +30,6 @@ async function startMcpServer(port: number): Promise<ChildProcess> {
     shell: true,
   });
 
-  // Wait for the server to be ready by polling the port
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("MCP server failed to start")), 15_000);
     const check = () => {
@@ -43,8 +43,8 @@ async function startMcpServer(port: number): Promise<ChildProcess> {
   return proc;
 }
 
-/** Prompt the user for input with a timeout. Returns null on timeout. */
-async function promptUser(timeoutMs: number): Promise<string | null> {
+/** Prompt the user for input via stdin with a timeout. Returns null on timeout. */
+async function promptStdin(timeoutMs: number): Promise<string | null> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
     const timer = setTimeout(() => { rl.close(); resolve(null); }, timeoutMs);
@@ -57,6 +57,35 @@ async function promptUser(timeoutMs: number): Promise<string | null> {
 }
 
 /**
+ * Wait for user input — either via stdin (interactive) or IPC socket (detached).
+ * In detached mode, prints PID and detaches. The `reply` command reconnects.
+ */
+async function getUserInput(
+  timeoutMs: number,
+  detachStdin: boolean,
+): Promise<string | null> {
+  if (!detachStdin) {
+    return promptStdin(timeoutMs);
+  }
+
+  // Detached mode: print PID and wait on IPC socket
+  const pid = process.pid;
+  console.log(pid);
+
+  const result = await waitForMessage(pid, timeoutMs);
+  if (result === null) return null;
+
+  // Client connected — pipe our future stdout to them
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk: string | Uint8Array, ...args: unknown[]) => {
+    result.client.write(chunk);
+    return (origWrite as Function)(chunk, ...args);
+  };
+
+  return result.message;
+}
+
+/**
  * Resolve the agent to an inline JSON string, fetching it if it's a remote ref.
  * Then inject the Playwright MCP server URL.
  */
@@ -66,10 +95,8 @@ async function resolveAgentWithMcp(
 ): Promise<string> {
   let agentObj: Record<string, unknown>;
 
-  // Check if this is a remote agent (has remote/mock/github fields at top level)
   const raw = agent as Record<string, unknown>;
   if ("remote" in raw && typeof raw["remote"] === "string") {
-    // Remote agent — fetch the full definition via CLI
     const ref = formatRemoteRef(raw);
     const fetched = await fetchAgent(ref);
     agentObj = JSON.parse(fetched) as Record<string, unknown>;
@@ -77,7 +104,6 @@ async function resolveAgentWithMcp(
     agentObj = { ...raw };
   }
 
-  // Inject MCP server
   const existing = (agentObj["mcp_servers"] as Array<{ url: string; authorization: boolean }>) ?? [];
   agentObj["mcp_servers"] = [...existing, { url: mcpUrl, authorization: false }];
 
@@ -90,7 +116,6 @@ function formatRemoteRef(raw: Record<string, unknown>): string {
   if (remote === "mock") {
     return `remote=mock,name=${raw["name"] as string}`;
   }
-  // GitHub remote
   const parts = [`remote=${remote}`];
   if (raw["owner"]) parts.push(`owner=${raw["owner"] as string}`);
   if (raw["repository"]) parts.push(`repository=${raw["repository"] as string}`);
@@ -102,12 +127,16 @@ function formatRemoteRef(raw: Record<string, unknown>): string {
  * Handle an unexpected page state by spawning an agent intervention.
  * Maintains continuation between attempts so the agent keeps context.
  * User input resets retry count and adds their message to the conversation.
+ *
+ * In detached mode, prints PID when waiting for input and accepts
+ * messages via the `agent reply` command.
  */
 export async function intervene(
   agent: AgentInlineAgentBaseWithFallbacksOrRemoteCommitOptional,
   query: string,
   pageUrl: string,
   config: Config,
+  detachStdin: boolean,
 ): Promise<void> {
   const port = await findPort();
   const mcpProc = await startMcpServer(port);
@@ -146,8 +175,6 @@ export async function intervene(
         continuation,
       );
 
-
-      // Get continuation for next attempt
       if (result.logId !== undefined) {
         continuation = await getAgentContinuation(result.logId);
       }
@@ -155,8 +182,7 @@ export async function intervene(
       retries++;
       if (retries >= maxAttempts) break;
 
-      // Wait for user input
-      const input = await promptUser(timeoutMs);
+      const input = await getUserInput(timeoutMs, detachStdin);
       if (input !== null) {
         retries = 0;
         userMessage = input;
@@ -166,5 +192,6 @@ export async function intervene(
     }
   } finally {
     mcpProc.kill();
+    cleanupSocket(process.pid);
   }
 }

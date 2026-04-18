@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { loadConfig, saveConfig } from "./config.js";
 import { NotificationConfigSchema } from "./notifications/index.js";
+import { sendMessage } from "./ipc.js";
 
 /** Print a config value as compact JSON (matches objectiveai-cli format). */
 function configGet(value: unknown): void {
@@ -22,9 +23,23 @@ export function buildCli(): Command {
   program
     .command("run <psyop-name>")
     .description("Run a psyop by name")
-    .action(async (name: string) => {
+    .option("--detach-stdin", "Detach when agent needs input, printing PID")
+    .action(async (name: string, opts: { detachStdin?: boolean }) => {
       const { main } = await import("./index.js");
-      await main(name);
+      await main(name, opts.detachStdin ?? false);
+    });
+
+  // ── agent ────────────────────────────────────────────────────────────────────
+
+  const agent = program
+    .command("agent")
+    .description("Interact with a running agent intervention");
+
+  agent
+    .command("reply <pid> <message>")
+    .description("Send a message to a detached agent and reattach to its output")
+    .action(async (pid: string, message: string) => {
+      await sendMessage(parseInt(pid, 10), message);
     });
 
   // ── config ───────────────────────────────────────────────────────────────────

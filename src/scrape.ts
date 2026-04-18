@@ -208,6 +208,7 @@ export async function scrape(
   psyopCommitSha: string,
   db: Db,
   config: Config,
+  detachStdin: boolean = false,
 ): Promise<number> {
   const targetCount = psyop.stages[0]!.count ?? 100;
   const now = new Date();
@@ -231,7 +232,7 @@ export async function scrape(
     let state = await validatePage(page);
     if (state === "unexpected") {
       console.log(`Unexpected page state for query "${query}" — spawning agent...`);
-      await intervene(psyop.agent, query, page.url(), config);
+      await intervene(psyop.agent, query, page.url(), config, detachStdin);
       state = await validatePage(page);
       if (state === "unexpected") {
         throw new Error(`Agent could not resolve unexpected page state for query "${query}" at ${page.url()}`);

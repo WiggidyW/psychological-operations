@@ -13,7 +13,7 @@ import { buildCli } from "./cli.js";
 
 const PSYOPS_DIR = path.join(os.homedir(), ".psychological-operations", "psyops");
 
-export async function main(name: string): Promise<void> {
+export async function main(name: string, detachStdin: boolean = false): Promise<void> {
   const config = loadConfig();
 
   const configPath = path.join(PSYOPS_DIR, name, "psyop.json");
@@ -30,7 +30,7 @@ export async function main(name: string): Promise<void> {
 
   const db = new Db();
   try {
-    const count = await scrape(psyop, name, commitSha, db, config);
+    const count = await scrape(psyop, name, commitSha, db, config, detachStdin);
     await notify(config.notifications, `PsyOp "${name}": scraped ${count} posts.`);
   } finally {
     db.close();
