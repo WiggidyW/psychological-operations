@@ -19,9 +19,19 @@ The ObjectiveAI Function is invented (generated) based on user-specified criteri
 
 Profiles can be improved over time through feedback. When the user indicates which results were good or bad, the ObjectiveAI profile computation endpoint refines the profile to better identify the type of tweets the user is looking for. This uses ObjectiveAI credits.
 
+## Architecture
+
+The project is split into two packages:
+
+- **`psychological-operations-cli`** — Rust CLI (clap-based). Owns all business logic: config, database, scoring, notifications, psyop loading, git versioning. Invokes the Playwright wrapper for browser operations and the `objectiveai` CLI for API calls.
+- **`psychological-operations-playwright`** — Thin Node.js/TypeScript process. Exposes Playwright browser automation via a JSON-over-stdio protocol. Never touches the filesystem directly.
+
 ## System requirements
 
-- **Windows**: Windows 10 build 17063 or later (required for Unix domain socket support)
+- **Rust** toolchain (stable)
+- **Node.js** (for the Playwright wrapper)
+- **`objectiveai` CLI** in PATH
+- **Windows**: Windows 10 build 17063 or later
 - **macOS / Linux**: Any modern version
 
 ## LLM credits
