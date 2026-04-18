@@ -48,7 +48,7 @@ async function promptUser(timeoutMs: number): Promise<string | null> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
     const timer = setTimeout(() => { rl.close(); resolve(null); }, timeoutMs);
-    rl.question("", (answer) => {
+    rl.question("\x1b[90m> \x1b[0m", (answer) => {
       clearTimeout(timer);
       rl.close();
       resolve(answer.trim() || null);
