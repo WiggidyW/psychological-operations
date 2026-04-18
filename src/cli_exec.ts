@@ -1,21 +1,33 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { spawn } from "node:child_process";
 
 const LOG_ID_PREFIX = "Logs ID: ";
 
 /**
- * Run an objectiveai CLI command and return stdout.
+ * Run an objectiveai CLI command.
+ * stdout and stderr are passed through directly to the terminal.
+ * stdout is also captured and returned for parsing.
  */
 export async function objectiveaiExec(args: string[]): Promise<string> {
-  const { stdout, stderr } = await execFileAsync("objectiveai", args, {
-    maxBuffer: 50 * 1024 * 1024,
+  return new Promise((resolve, reject) => {
+    const proc = spawn("objectiveai", args, { stdio: ["inherit", "pipe", "inherit"] });
+
+    const chunks: Buffer[] = [];
+    proc.stdout.on("data", (chunk: Buffer) => {
+      process.stdout.write(chunk); // passthrough
+      chunks.push(chunk);
+    });
+
+    proc.on("close", (code) => {
+      const stdout = Buffer.concat(chunks).toString("utf-8");
+      if (code !== 0) {
+        reject(new Error(`objectiveai exited with code ${code}`));
+      } else {
+        resolve(stdout);
+      }
+    });
+
+    proc.on("error", reject);
   });
-  if (stderr.trim()) {
-    console.error(`objectiveai stderr: ${stderr.trim()}`);
-  }
-  return stdout;
 }
 
 /** Parse the log ID from CLI output. */
@@ -88,7 +100,7 @@ export async function fetchAgent(ref: string): Promise<string> {
 
 /**
  * Run an agent completion via the CLI.
- * Returns the assistant text, log ID, and continuation token.
+ * Returns the assistant text and log ID.
  */
 export async function runAgentCompletion(
   agentJson: string,
