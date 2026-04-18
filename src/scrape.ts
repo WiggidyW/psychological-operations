@@ -6,7 +6,6 @@ import type {
   AgentCompletionsMessageImageUrl,
   AgentCompletionsMessageVideoUrl,
 } from "objectiveai";
-import { ObjectiveAI } from "objectiveai";
 import type { Db } from "./db.js";
 import { validForPsyop, type PsyOp } from "./psyop.js";
 import { intervene } from "./intervene.js";
@@ -204,7 +203,6 @@ function pickNewest(tabs: QueryTab[]): { tab: QueryTab; tweet: TweetData } | nul
  * This case needs handling once we decide what to do (retry, warn, etc.).
  */
 export async function scrape(
-  client: ObjectiveAI,
   psyop: PsyOp,
   name: string,
   psyopCommitSha: string,
@@ -234,7 +232,7 @@ export async function scrape(
     let state = await validatePage(page);
     if (state === "unexpected") {
       console.log(`Unexpected page state for query "${query}" — spawning agent...`);
-      await intervene(client, psyop.agent, query, page.url(), config);
+      await intervene(psyop.agent, query, page.url(), config);
       state = await validatePage(page);
       if (state === "unexpected") {
         throw new Error(`Agent could not resolve unexpected page state for query "${query}" at ${page.url()}`);

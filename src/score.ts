@@ -1,13 +1,10 @@
-import {
-  ObjectiveAI,
-  functionsExecutionsCreateFunctionExecution,
-} from "objectiveai";
 import type { QueuedPost } from "./db.js";
 import type { PsyOp, Stage } from "./psyop.js";
 import { newPostInputValue } from "./input.js";
+import { runFunctionExecution } from "./cli_exec.js";
 import type { PostInputValue, PostsInputValue } from "./input.js";
 
-interface ScoredPost {
+export interface ScoredPost {
   post: QueuedPost;
   score: number;
 }
@@ -15,13 +12,13 @@ interface ScoredPost {
 /**
  * Run all stages of a psyop against the given posts.
  *
- * Each stage runs a vector function execution. The output is a score per post.
- * Between stages, posts are filtered and narrowed by threshold and count.
+ * Each stage runs a vector function execution via the objectiveai CLI.
+ * The output is a score per post. Between stages, posts are filtered
+ * and narrowed by threshold and count.
  *
  * Returns the final set of scored posts after all stages.
  */
 export async function score(
-  client: ObjectiveAI,
   psyop: PsyOp,
   posts: QueuedPost[],
 ): Promise<ScoredPost[]> {
@@ -36,16 +33,15 @@ export async function score(
     const items: PostInputValue[] = current.map((s) => newPostInputValue(s.post));
     const input: PostsInputValue = { items };
 
-    // Execute function
-    const result = await functionsExecutionsCreateFunctionExecution(client, {
-      function: stage.function,
-      profile: stage.profile,
-      strategy: stage.strategy,
-      input,
-    });
+    // Execute function via CLI
+    const result = await runFunctionExecution(
+      JSON.stringify(stage.function),
+      JSON.stringify(stage.profile),
+      JSON.stringify(input),
+    );
 
     // Extract scores — vector function returns number[]
-    const output = result.output.output;
+    const output = result.output;
     if (!Array.isArray(output) || typeof output[0] !== "number") {
       throw new Error(`Stage ${i}: expected vector output (number[]), got ${typeof output}`);
     }

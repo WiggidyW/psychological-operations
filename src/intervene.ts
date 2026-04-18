@@ -1,12 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import net from "node:net";
 import readline from "node:readline";
-import {
-  ObjectiveAI,
-  agentCompletionsCreateAgentCompletion,
-  type AgentInlineAgentBaseWithFallbacksOrRemoteCommitOptional,
-} from "objectiveai";
-
+import type { AgentInlineAgentBaseWithFallbacksOrRemoteCommitOptional } from "objectiveai";
+import { runAgentCompletion, getAgentContinuation, fetchAgent } from "./cli_exec.js";
 import type { Config } from "./config.js";
 
 /** Find an available port. */
@@ -60,74 +56,54 @@ async function promptUser(timeoutMs: number): Promise<string | null> {
   });
 }
 
-/** Inject the Playwright MCP server URL into the agent's mcp_servers list. */
-function withMcpServer(
+/**
+ * Resolve the agent to an inline JSON string, fetching it if it's a remote ref.
+ * Then inject the Playwright MCP server URL.
+ */
+async function resolveAgentWithMcp(
   agent: AgentInlineAgentBaseWithFallbacksOrRemoteCommitOptional,
   mcpUrl: string,
-): AgentInlineAgentBaseWithFallbacksOrRemoteCommitOptional {
-  // The agent could be inline or remote — we need to inject mcp_servers on the inline base
-  const agentBase = (agent as Record<string, unknown>);
-  const existing = (agentBase["mcp_servers"] as Array<{ url: string; authorization: boolean }>) ?? [];
-  return {
-    ...agent,
-    mcp_servers: [...existing, { url: mcpUrl, authorization: false }],
-  } as AgentInlineAgentBaseWithFallbacksOrRemoteCommitOptional;
+): Promise<string> {
+  let agentObj: Record<string, unknown>;
+
+  // Check if this is a remote agent (has remote/mock/github fields at top level)
+  const raw = agent as Record<string, unknown>;
+  if ("remote" in raw && typeof raw["remote"] === "string") {
+    // Remote agent — fetch the full definition via CLI
+    const ref = formatRemoteRef(raw);
+    const fetched = await fetchAgent(ref);
+    agentObj = JSON.parse(fetched) as Record<string, unknown>;
+  } else {
+    agentObj = { ...raw };
+  }
+
+  // Inject MCP server
+  const existing = (agentObj["mcp_servers"] as Array<{ url: string; authorization: boolean }>) ?? [];
+  agentObj["mcp_servers"] = [...existing, { url: mcpUrl, authorization: false }];
+
+  return JSON.stringify(agentObj);
 }
 
-/**
- * Spawn an agent to handle an unexpected page state.
- * The agent uses the Playwright MCP server to observe and interact with the browser.
- * Returns when the agent finishes.
- */
-async function runAgent(
-  client: ObjectiveAI,
-  agent: AgentInlineAgentBaseWithFallbacksOrRemoteCommitOptional,
-  mcpUrl: string,
-  systemPrompt: string,
-  userMessage: string,
-): Promise<void> {
-  const agentWithMcp = withMcpServer(agent, mcpUrl);
-
-  let continuation: string | undefined;
-  let message = userMessage;
-
-  while (true) {
-    const result = await agentCompletionsCreateAgentCompletion(client, {
-      agent: agentWithMcp,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: message },
-      ],
-      ...(continuation !== undefined ? { continuation } : {}),
-    });
-
-    continuation = result.continuation ?? undefined;
-
-    // Find the last assistant response
-    const lastAssistant = [...result.messages].reverse().find(
-      (m) => "finish_reason" in m,
-    );
-
-    if (!lastAssistant || !("finish_reason" in lastAssistant)) break;
-
-    // If the agent stopped (not calling tools), it's done
-    if (lastAssistant.finish_reason !== "tool_calls") break;
-
-    // Tool calls are handled server-side via continuation — just loop
+/** Format a remote agent ref for the CLI --path argument. */
+function formatRemoteRef(raw: Record<string, unknown>): string {
+  const remote = raw["remote"] as string;
+  if (remote === "mock") {
+    return `remote=mock,name=${raw["name"] as string}`;
   }
+  // GitHub remote
+  const parts = [`remote=${remote}`];
+  if (raw["owner"]) parts.push(`owner=${raw["owner"] as string}`);
+  if (raw["repository"]) parts.push(`repository=${raw["repository"] as string}`);
+  if (raw["commit"]) parts.push(`commit=${raw["commit"] as string}`);
+  return parts.join(",");
 }
 
 /**
  * Handle an unexpected page state by spawning an agent intervention.
- * Retries up to MAX_RETRIES times. Resets retry count when user provides input.
- *
- * @param client - ObjectiveAI client
- * @param agent - The psyop's agent config
- * @param query - The query that produced the unexpected page
- * @param pageUrl - Current URL of the unexpected page
+ * Maintains continuation between attempts so the agent keeps context.
+ * User input resets retry count and adds their message to the conversation.
  */
 export async function intervene(
-  client: ObjectiveAI,
   agent: AgentInlineAgentBaseWithFallbacksOrRemoteCommitOptional,
   query: string,
   pageUrl: string,
@@ -146,7 +122,10 @@ export async function intervene(
     `age gates, or rate limiting pages. ` +
     `Get the browser to a state where X search results are visible.`;
 
+  const agentJson = await resolveAgentWithMcp(agent, mcpUrl);
+
   let retries = 0;
+  let continuation: string | undefined;
   let userMessage = "Please observe the current page state and try to resolve the issue.";
 
   try {
@@ -155,9 +134,27 @@ export async function intervene(
 
     while (retries < maxAttempts) {
       console.log(`Agent intervention attempt ${retries + 1}/${maxAttempts}...`);
-      await runAgent(client, agent, mcpUrl, systemPrompt, userMessage);
 
-      // Check if we can return (caller will re-validate)
+      const messages = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ];
+
+      const result = await runAgentCompletion(
+        agentJson,
+        JSON.stringify(messages),
+        continuation,
+      );
+
+      if (result.text) {
+        console.log(`Agent: ${result.text}`);
+      }
+
+      // Get continuation for next attempt
+      if (result.logId !== undefined) {
+        continuation = await getAgentContinuation(result.logId);
+      }
+
       retries++;
       if (retries >= maxAttempts) break;
 

@@ -4,7 +4,6 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import git from "isomorphic-git";
-import { ObjectiveAI } from "objectiveai";
 import { PsyOpSchema } from "./psyop.js";
 import { Db } from "./db.js";
 import { scrape } from "./scrape.js";
@@ -29,10 +28,9 @@ export async function main(name: string): Promise<void> {
   const psyopDir = path.join(PSYOPS_DIR, name);
   const commitSha = await git.resolveRef({ fs, dir: psyopDir, ref: "HEAD" });
 
-  const client = new ObjectiveAI();
   const db = new Db();
   try {
-    const count = await scrape(client, psyop, name, commitSha, db, config);
+    const count = await scrape(psyop, name, commitSha, db, config);
     await notify(config.notifications, `PsyOp "${name}": scraped ${count} posts.`);
   } finally {
     db.close();
