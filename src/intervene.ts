@@ -48,7 +48,7 @@ async function promptUser(timeoutMs: number): Promise<string | null> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
     const timer = setTimeout(() => { rl.close(); resolve(null); }, timeoutMs);
-    rl.question("Provide guidance to the agent (or wait for auto-retry): ", (answer) => {
+    rl.question("", (answer) => {
       clearTimeout(timer);
       rl.close();
       resolve(answer.trim() || null);
@@ -146,9 +146,6 @@ export async function intervene(
         continuation,
       );
 
-      if (result.text) {
-        console.log(`Agent: ${result.text}`);
-      }
 
       // Get continuation for next attempt
       if (result.logId !== undefined) {
@@ -159,7 +156,6 @@ export async function intervene(
       if (retries >= maxAttempts) break;
 
       // Wait for user input
-      console.log(`Agent finished. Waiting ${config.agent_timeout} seconds for user guidance...`);
       const input = await promptUser(timeoutMs);
       if (input !== null) {
         retries = 0;

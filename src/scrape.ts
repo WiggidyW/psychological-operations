@@ -226,7 +226,6 @@ export async function scrape(
   for (const query of psyop.queries) {
     const page = await context.newPage();
     const url = `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=live`;
-    console.log(`Opening tab for: ${query}`);
     await page.goto(url, { waitUntil: "domcontentloaded" });
 
     let state = await validatePage(page);
@@ -314,10 +313,8 @@ export async function scrape(
     }
 
     collected++;
-    console.log(`[${collected}/${targetCount}] @${tweet.handle}: ${tweet.text.slice(0, 80)}`);
   }
 
   await context.close();
-  console.log(`Scraped ${collected} tweets.`);
   return collected;
 }
