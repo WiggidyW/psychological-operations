@@ -1,6 +1,16 @@
 import { Command } from "commander";
 import { loadConfig, saveConfig } from "./config.js";
-import { NotificationConfigSchema, type NotificationConfig } from "./notifications/index.js";
+import { NotificationConfigSchema } from "./notifications/index.js";
+
+/** Print a config value as compact JSON (matches objectiveai-cli format). */
+function configGet(value: unknown): void {
+  console.log(JSON.stringify(value));
+}
+
+/** Print config set confirmation (matches objectiveai-cli format). */
+function configSet(): void {
+  console.log("ok");
+}
 
 export function buildCli(): Command {
   const program = new Command()
@@ -13,7 +23,6 @@ export function buildCli(): Command {
     .command("run <psyop-name>")
     .description("Run a psyop by name")
     .action(async (name: string) => {
-      // Dynamically import to avoid loading everything for config commands
       const { main } = await import("./index.js");
       await main(name);
     });
@@ -33,8 +42,7 @@ export function buildCli(): Command {
     .command("get")
     .description("Get current agent timeout")
     .action(() => {
-      const cfg = loadConfig();
-      console.log(cfg.agent_timeout);
+      configGet(loadConfig().agent_timeout);
     });
 
   agentTimeout
@@ -44,6 +52,7 @@ export function buildCli(): Command {
       const cfg = loadConfig();
       cfg.agent_timeout = parseInt(value, 10);
       saveConfig(cfg);
+      configSet();
     });
 
   // agent-max-attempts
@@ -55,8 +64,7 @@ export function buildCli(): Command {
     .command("get")
     .description("Get current max attempts")
     .action(() => {
-      const cfg = loadConfig();
-      console.log(cfg.agent_max_attempts);
+      configGet(loadConfig().agent_max_attempts);
     });
 
   agentMaxAttempts
@@ -66,6 +74,7 @@ export function buildCli(): Command {
       const cfg = loadConfig();
       cfg.agent_max_attempts = parseInt(value, 10);
       saveConfig(cfg);
+      configSet();
     });
 
   // notifications
@@ -82,12 +91,12 @@ export function buildCli(): Command {
         const i = parseInt(index, 10);
         const entry = cfg.notifications[i];
         if (entry === undefined) {
-          console.error(`No notification at index ${i}`);
+          console.error(`error: no notification at index ${i}`);
           process.exit(1);
         }
-        console.log(JSON.stringify(entry, null, 2));
+        configGet(entry);
       } else {
-        console.log(JSON.stringify(cfg.notifications, null, 2));
+        configGet(cfg.notifications);
       }
     });
 
@@ -99,7 +108,7 @@ export function buildCli(): Command {
       const parsed = NotificationConfigSchema.parse(JSON.parse(json));
       cfg.notifications.push(parsed);
       saveConfig(cfg);
-      console.log(`Added notification at index ${cfg.notifications.length - 1}`);
+      configSet();
     });
 
   notifications
@@ -109,12 +118,12 @@ export function buildCli(): Command {
       const cfg = loadConfig();
       const i = parseInt(index, 10);
       if (i < 0 || i >= cfg.notifications.length) {
-        console.error(`No notification at index ${i}`);
+        console.error(`error: no notification at index ${i}`);
         process.exit(1);
       }
       cfg.notifications.splice(i, 1);
       saveConfig(cfg);
-      console.log(`Removed notification at index ${i}`);
+      configSet();
     });
 
   return program;
