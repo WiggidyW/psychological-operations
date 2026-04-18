@@ -45,9 +45,9 @@ pub struct Playwright {
 }
 
 impl Playwright {
-    pub fn spawn(playwright_dir: &str) -> Result<Self, crate::error::Error> {
-        let mut child = Command::new("node")
-            .arg(format!("{playwright_dir}/dist/index.js"))
+    pub fn spawn() -> Result<Self, crate::error::Error> {
+        let binary_path = crate::playwright_binary::extract()?;
+        let mut child = Command::new(&binary_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -115,6 +115,11 @@ impl Playwright {
 
     pub fn stop_mcp(&mut self) -> Result<(), crate::error::Error> {
         self.send(&serde_json::json!({ "cmd": "stop_mcp" }))?;
+        Ok(())
+    }
+
+    pub fn install_browser(&mut self) -> Result<(), crate::error::Error> {
+        self.send(&serde_json::json!({ "cmd": "install_browser" }))?;
         Ok(())
     }
 

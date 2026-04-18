@@ -5,6 +5,7 @@ pub mod psyop;
 pub mod input;
 pub mod publish;
 pub mod playwright;
+pub mod playwright_binary;
 pub mod score;
 pub mod notifications;
 pub mod agent;
@@ -127,9 +128,7 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
     let commit_sha = head.id().to_string();
 
     // Scrape
-    let playwright_dir = std::env::var("PSYOPS_PLAYWRIGHT_DIR")
-        .unwrap_or_else(|_| "psychological-operations-playwright".to_string());
-    let mut pw = playwright::Playwright::spawn(&playwright_dir)?;
+    let mut pw = playwright::Playwright::spawn()?;
 
     let target_count = psyop.stages.first()
         .and_then(|s| s.count)
