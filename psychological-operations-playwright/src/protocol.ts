@@ -3,10 +3,12 @@ import path from "node:path";
 import os from "node:os";
 import { startMcpServer, stopMcpServer } from "./mcp.js";
 import { parseTweet, type TweetData } from "./tweet.js";
+import { findPort } from "./port.js";
 
 const USER_DATA_DIR = path.join(os.homedir(), ".psychological-operations", "chrome-data");
 
 let context: BrowserContext | null = null;
+let cdpPort: number | null = null;
 
 interface QueryTab {
   query: string;
@@ -21,11 +23,12 @@ const tabs: QueryTab[] = [];
 
 async function ensureContext(): Promise<BrowserContext> {
   if (context !== null) return context;
+  cdpPort = await findPort();
   context = await chromium.launchPersistentContext(USER_DATA_DIR, {
     headless: false,
     channel: "chrome",
     args: [
-      "--remote-debugging-port=9222",
+      `--remote-debugging-port=${cdpPort}`,
       "--disable-blink-features=AutomationControlled",
     ],
   });
@@ -142,6 +145,7 @@ async function close(): Promise<void> {
   if (context !== null) {
     await context.close();
     context = null;
+    cdpPort = null;
   }
   tabs.length = 0;
 }
@@ -167,7 +171,10 @@ export async function handleCommand(cmd: Record<string, unknown>): Promise<unkno
       return { open: hasOpenTabs() };
 
     case "start_mcp": {
-      const port = await startMcpServer();
+      if (cdpPort === null) {
+        return { error: "browser not started — call open_tabs first" };
+      }
+      const port = await startMcpServer(cdpPort);
       return { mcp_port: port };
     }
 
