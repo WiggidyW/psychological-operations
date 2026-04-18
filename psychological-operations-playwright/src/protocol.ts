@@ -188,6 +188,24 @@ export async function handleCommand(cmd: Record<string, unknown>): Promise<unkno
       return { url: tab?.page.url() ?? null };
     }
 
+    case "install_browser": {
+      try {
+        // @ts-expect-error playwright-core internal API
+        const { installBrowsersForNpmInstall } = await import("playwright-core/lib/server");
+        await (installBrowsersForNpmInstall as (browsers: string[]) => Promise<void>)(["chromium"]);
+        return { ok: true };
+      } catch {
+        // Fallback: try CLI approach
+        const { execFileSync } = await import("node:child_process");
+        try {
+          execFileSync(process.execPath, ["-e", "require('playwright-core/cli').program.parse(['node', 'playwright', 'install', 'chromium'])"], { stdio: "inherit" });
+          return { ok: true };
+        } catch (err) {
+          return { error: `browser install failed: ${err}` };
+        }
+      }
+    }
+
     case "close":
       await close();
       return { ok: true };
