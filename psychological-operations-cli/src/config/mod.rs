@@ -1,7 +1,49 @@
+pub mod agent_timeout;
+pub mod agent_max_attempts;
+pub mod notifications_cmd;
+
+use clap::Subcommand;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::notifications::NotificationConfig;
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+#[derive(Subcommand)]
+pub enum Commands {
+    /// Agent intervention timeout in seconds
+    AgentTimeout {
+        #[command(subcommand)]
+        command: agent_timeout::Commands,
+    },
+    /// Agent intervention max retry attempts
+    AgentMaxAttempts {
+        #[command(subcommand)]
+        command: agent_max_attempts::Commands,
+    },
+    /// Manage notification targets
+    Notifications {
+        #[command(subcommand)]
+        command: notifications_cmd::Commands,
+    },
+}
+
+impl Commands {
+    pub fn handle(self) -> Result<crate::Output, crate::error::Error> {
+        match self {
+            Commands::AgentTimeout { command } => command.handle(),
+            Commands::AgentMaxAttempts { command } => command.handle(),
+            Commands::Notifications { command } => command.handle(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Config I/O
+// ---------------------------------------------------------------------------
 
 fn base_dir() -> PathBuf {
     dirs::home_dir()
