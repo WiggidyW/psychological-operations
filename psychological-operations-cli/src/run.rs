@@ -25,6 +25,8 @@ enum Commands {
         #[command(flatten)]
         args: publish::PublishArgs,
     },
+    /// List all psyops
+    List,
     /// Interact with a running agent intervention
     Agent {
         #[command(subcommand)]
@@ -60,9 +62,32 @@ pub async fn run() -> Result<Output, error::Error> {
     match cli.command {
         Commands::Run { args } => args.handle().await,
         Commands::Publish { args } => args.handle(),
+        Commands::List => list_psyops(),
         Commands::Agent { command } => command.handle().await,
         Commands::Config { command } => command.handle(),
     }
+}
+
+fn list_psyops() -> Result<Output, error::Error> {
+    let dir = config::psyops_dir();
+    if !dir.exists() {
+        return Ok(Output::Api("[]".into()));
+    }
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(&dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir()
+            && path.join("psyop.json").exists()
+            && path.join(".git").exists()
+        {
+            if let Some(name) = entry.file_name().to_str() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names.sort();
+    Ok(Output::Api(serde_json::to_string(&names)?))
 }
 
 // ---------------------------------------------------------------------------
