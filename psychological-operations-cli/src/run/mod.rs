@@ -108,7 +108,7 @@ async fn run_psyop(name: &str) -> Result<(), crate::error::Error> {
     }
 
     // Notify
-    crate::notifications::notify(&cfg.notifications, &format!("PsyOp \"{name}\": scraped {collected} posts.")).await;
+    crate::config::notifications::destinations::notify(&cfg.notifications, &format!("PsyOp \"{name}\": scraped {collected} posts.")).await;
 
     Ok(())
 }

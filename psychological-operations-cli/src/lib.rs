@@ -7,7 +7,6 @@ pub mod publish;
 pub mod playwright;
 pub mod playwright_binary;
 pub mod score;
-pub mod notifications;
 mod run;
 mod agent;
 

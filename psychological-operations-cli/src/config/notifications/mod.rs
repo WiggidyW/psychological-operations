@@ -1,3 +1,5 @@
+pub mod destinations;
+
 use clap::Subcommand;
 
 #[derive(Subcommand)]
@@ -31,7 +33,7 @@ impl Commands {
                 }
             }
             Commands::Add { json } => {
-                let parsed: crate::notifications::NotificationConfig = serde_json::from_str(&json)?;
+                let parsed: destinations::Destination = serde_json::from_str(&json)?;
                 cfg.notifications.push(parsed);
                 crate::config::save(&cfg)?;
                 Ok(crate::Output::ConfigSet)

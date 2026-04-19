@@ -1,12 +1,12 @@
 pub mod agent_timeout;
 pub mod agent_max_attempts;
-pub mod notifications_cmd;
+pub mod notifications;
 
 use clap::Subcommand;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::notifications::NotificationConfig;
+use notifications::destinations::Destination;
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -27,7 +27,7 @@ pub enum Commands {
     /// Manage notification targets
     Notifications {
         #[command(subcommand)]
-        command: notifications_cmd::Commands,
+        command: notifications::Commands,
     },
 }
 
@@ -70,7 +70,7 @@ pub struct Config {
     #[serde(default = "default_agent_max_attempts")]
     pub agent_max_attempts: u64,
     #[serde(default)]
-    pub notifications: Vec<NotificationConfig>,
+    pub notifications: Vec<Destination>,
 }
 
 fn default_agent_timeout() -> u64 { 180 }
