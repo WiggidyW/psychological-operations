@@ -16,6 +16,8 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("http error: {0}")]
     Http(#[from] reqwest::Error),
+    #[error("invalid psyop: {0}")]
+    InvalidPsyop(String),
     #[error("stage {stage}: {message}")]
     Stage { stage: usize, message: String },
     #[error("{0}")]

@@ -3,12 +3,12 @@ pub mod config;
 pub mod db;
 pub mod psyop;
 pub mod input;
-pub mod publish;
 pub mod playwright;
 pub mod playwright_binary;
 pub mod score;
 mod run;
 mod agent;
+mod publish;
 
 use clap::{Parser, Subcommand};
 
@@ -27,6 +27,11 @@ enum Commands {
         #[command(flatten)]
         args: run::RunArgs,
     },
+    /// Publish a psyop definition
+    Publish {
+        #[command(flatten)]
+        args: publish::PublishArgs,
+    },
     /// Interact with a running agent intervention
     Agent {
         #[command(subcommand)]
@@ -42,6 +47,7 @@ enum Commands {
 pub enum Output {
     ConfigGet(String),
     ConfigSet,
+    Api(String),
     Empty,
 }
 
@@ -50,6 +56,7 @@ impl std::fmt::Display for Output {
         match self {
             Output::ConfigGet(s) => write!(f, "{s}"),
             Output::ConfigSet => write!(f, "ok"),
+            Output::Api(s) => write!(f, "{s}"),
             Output::Empty => Ok(()),
         }
     }
@@ -59,6 +66,7 @@ pub async fn run() -> Result<Output, error::Error> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Run { args } => args.handle().await,
+        Commands::Publish { args } => args.handle(),
         Commands::Agent { command } => command.handle().await,
         Commands::Config { command } => command.handle(),
     }

@@ -20,6 +20,22 @@ pub struct PsyOp {
     pub stages: Vec<Stage>,
 }
 
+impl PsyOp {
+    pub fn validate(&self) -> Result<(), crate::error::Error> {
+        if self.stages.is_empty() {
+            return Err(crate::error::Error::InvalidPsyop("stages must not be empty".into()));
+        }
+        let first = &self.stages[0];
+        if first.count.is_none() {
+            return Err(crate::error::Error::InvalidPsyop("first stage must have a count".into()));
+        }
+        if first.threshold.is_some() {
+            return Err(crate::error::Error::InvalidPsyop("first stage must not have a threshold".into()));
+        }
+        Ok(())
+    }
+}
+
 pub struct ValidationResult {
     pub valid: bool,
     pub reason: Option<&'static str>,

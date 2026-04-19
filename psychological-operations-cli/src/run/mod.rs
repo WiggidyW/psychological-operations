@@ -27,6 +27,7 @@ async fn run_psyop(name: &str) -> Result<(), crate::error::Error> {
 
     let data = std::fs::read_to_string(&config_path)?;
     let psyop: crate::psyop::PsyOp = serde_json::from_str(&data)?;
+    psyop.validate()?;
 
     // Get commit SHA
     let repo = git2::Repository::open(&psyop_dir)?;
