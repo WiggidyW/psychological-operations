@@ -1,28 +1,97 @@
-use clap::Args;
+use clap::{Args, Parser, Subcommand};
 
-#[derive(Args)]
-pub struct RunArgs {
-    /// Psyop name
-    pub name: String,
-    /// Detach when agent needs input, printing PID
-    #[arg(long)]
-    pub detach_stdin: bool,
+use crate::agent;
+use crate::config;
+use crate::publish;
+use crate::error;
+
+#[derive(Parser)]
+#[command(name = "psychological-operations")]
+#[command(about = "Agentic X scraper with ObjectiveAI scoring pipeline")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
 }
 
-impl RunArgs {
-    pub async fn handle(self) -> Result<crate::Output, crate::error::Error> {
-        run_psyop(&self.name).await?;
-        Ok(crate::Output::Empty)
+#[derive(Subcommand)]
+enum Commands {
+    /// Run a psyop
+    Run {
+        #[command(flatten)]
+        args: RunArgs,
+    },
+    /// Publish a psyop definition
+    Publish {
+        #[command(flatten)]
+        args: publish::PublishArgs,
+    },
+    /// Interact with a running agent intervention
+    Agent {
+        #[command(subcommand)]
+        command: agent::Commands,
+    },
+    /// Manage configuration
+    Config {
+        #[command(subcommand)]
+        command: config::Commands,
+    },
+}
+
+pub enum Output {
+    ConfigGet(String),
+    ConfigSet,
+    Api(String),
+    Empty,
+}
+
+impl std::fmt::Display for Output {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Output::ConfigGet(s) => write!(f, "{s}"),
+            Output::ConfigSet => write!(f, "ok"),
+            Output::Api(s) => write!(f, "{s}"),
+            Output::Empty => Ok(()),
+        }
     }
 }
 
-async fn run_psyop(name: &str) -> Result<(), crate::error::Error> {
-    let cfg = crate::config::load();
-    let psyop_dir = crate::config::psyops_dir().join(name);
+pub async fn run() -> Result<Output, error::Error> {
+    let cli = Cli::parse();
+    match cli.command {
+        Commands::Run { args } => args.handle().await,
+        Commands::Publish { args } => args.handle(),
+        Commands::Agent { command } => command.handle().await,
+        Commands::Config { command } => command.handle(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Run command
+// ---------------------------------------------------------------------------
+
+#[derive(Args)]
+struct RunArgs {
+    /// Psyop name
+    name: String,
+    /// Detach when agent needs input, printing PID
+    #[arg(long)]
+    detach_stdin: bool,
+}
+
+impl RunArgs {
+    async fn handle(self) -> Result<Output, error::Error> {
+        run_psyop(&self.name).await?;
+        Ok(Output::Empty)
+    }
+}
+
+async fn run_psyop(name: &str) -> Result<(), error::Error> {
+    let cfg = config::load();
+    let psyop_dir = config::psyops_dir().join(name);
     let config_path = psyop_dir.join("psyop.json");
 
     if !config_path.exists() {
-        return Err(crate::error::Error::PsyopNotFound(config_path.display().to_string()));
+        return Err(error::Error::PsyopNotFound(config_path.display().to_string()));
     }
 
     let data = std::fs::read_to_string(&config_path)?;
@@ -49,7 +118,7 @@ async fn run_psyop(name: &str) -> Result<(), crate::error::Error> {
     for (query, state) in &states {
         if state == "unexpected" {
             // TODO: agent intervention
-            return Err(crate::error::Error::Playwright(format!("unexpected page state for query \"{query}\"")));
+            return Err(error::Error::Playwright(format!("unexpected page state for query \"{query}\"")));
         }
     }
 
@@ -103,7 +172,7 @@ async fn run_psyop(name: &str) -> Result<(), crate::error::Error> {
     }
 
     // Notify
-    crate::config::notifications::destinations::notify(&cfg.notifications, &format!("PsyOp \"{name}\": scraped {collected} posts.")).await;
+    config::notifications::destinations::notify(&cfg.notifications, &format!("PsyOp \"{name}\": scraped {collected} posts.")).await;
 
     Ok(())
 }
