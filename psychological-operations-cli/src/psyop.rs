@@ -1,17 +1,26 @@
 use serde::{Deserialize, Serialize};
+use objectiveai::functions::{
+    FullInlineFunctionOrRemoteCommitOptional,
+    FullInlineFunction,
+    AlphaInlineFunction,
+    InlineFunction,
+    InlineProfileOrRemoteCommitOptional,
+};
+use objectiveai::functions::executions::request::Strategy;
+use objectiveai::agent::InlineAgentBaseWithFallbacksOrRemoteCommitOptional;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Stage {
-    pub function: serde_json::Value,
-    pub profile: serde_json::Value,
-    pub strategy: serde_json::Value,
+    pub function: FullInlineFunctionOrRemoteCommitOptional,
+    pub profile: InlineProfileOrRemoteCommitOptional,
+    pub strategy: Strategy,
     pub count: Option<u64>,
     pub threshold: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PsyOp {
-    pub agent: serde_json::Value,
+    pub agent: InlineAgentBaseWithFallbacksOrRemoteCommitOptional,
     pub queries: Vec<String>,
     pub count: Option<u64>,
     pub threshold: Option<f64>,
@@ -56,4 +65,13 @@ pub fn valid_for_psyop(psyop: &PsyOp, created: &str, likes: u64, now: &chrono::D
         }
     }
     ValidationResult { valid: true, reason: None }
+}
+
+/// Determine if a function is a vector function.
+/// If the function is remote, it must be fetched first (caller resolves it).
+pub fn is_vector_function(function: &FullInlineFunction) -> bool {
+    match function {
+        FullInlineFunction::Alpha(alpha) => matches!(alpha, AlphaInlineFunction::Vector(_)),
+        FullInlineFunction::Standard(standard) => matches!(standard, InlineFunction::Vector { .. }),
+    }
 }

@@ -1,26 +1,84 @@
+use objectiveai::functions::{
+    FullInlineFunctionOrRemoteCommitOptional,
+    FullInlineFunction,
+    InlineProfileOrRemoteCommitOptional,
+};
+use objectiveai::RemotePathCommitOptional;
+use serde::Deserialize;
+
 use crate::db::QueuedPost;
-use crate::input::{new_post_input_value, PostsInputValue};
-use crate::psyop::{PsyOp, Stage};
+use crate::input::{new_post_input_value, PostsInputValue, PostInputValue};
+use crate::psyop::{PsyOp, Stage, is_vector_function};
 
 pub struct ScoredPost {
     pub post: QueuedPost,
     pub score: f64,
 }
 
-/// Run an objectiveai function execution via the CLI.
-/// Returns the parsed output.
-fn run_function_execution(
-    function_json: &str,
-    profile_json: &str,
-    input_json: &str,
-) -> Result<serde_json::Value, crate::error::Error> {
+#[derive(Deserialize)]
+struct ExecutionOutput {
+    output: OutputValue,
+}
+
+#[derive(Deserialize)]
+struct OutputValue {
+    output: serde_json::Value,
+}
+
+/// Format a RemotePathCommitOptional for the CLI --path argument.
+fn format_remote_ref(path: &RemotePathCommitOptional) -> String {
+    serde_json::to_string(path).unwrap()
+}
+
+/// Fetch a remote function definition via the CLI and deserialize to inline.
+fn fetch_function(path: &RemotePathCommitOptional) -> Result<FullInlineFunction, crate::error::Error> {
+    let ref_str = format_remote_ref(path);
     let output = std::process::Command::new("objectiveai")
-        .args([
-            "functions", "executions", "create", "standard",
-            "--function-inline", function_json,
-            "--profile-inline", profile_json,
-            "--input-inline", input_json,
-        ])
+        .args(["functions", "get", "--path", &ref_str])
+        .stdin(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .output()?;
+
+    if !output.status.success() {
+        return Err(crate::error::Error::ObjectiveAiCli("failed to fetch function".into()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let function: FullInlineFunction = serde_json::from_str(stdout.trim())?;
+    Ok(function)
+}
+
+/// Resolve a function to its inline definition, fetching if remote.
+fn resolve_function(function: &FullInlineFunctionOrRemoteCommitOptional) -> Result<FullInlineFunction, crate::error::Error> {
+    match function {
+        FullInlineFunctionOrRemoteCommitOptional::Inline(f) => Ok(f.clone()),
+        FullInlineFunctionOrRemoteCommitOptional::Remote(path) => fetch_function(path),
+    }
+}
+
+/// Run a function execution via the CLI. Always passes inline function and profile.
+fn run_function_execution(
+    function: &FullInlineFunction,
+    profile: &InlineProfileOrRemoteCommitOptional,
+    input_json: &str,
+    split: bool,
+) -> Result<ExecutionOutput, crate::error::Error> {
+    let function_json = serde_json::to_string(function)?;
+    let profile_json = serde_json::to_string(profile)?;
+
+    let mut args = vec![
+        "functions".to_string(), "executions".to_string(), "create".to_string(), "standard".to_string(),
+        "--function-inline".to_string(), function_json,
+        "--profile-inline".to_string(), profile_json,
+        "--input-inline".to_string(), input_json.to_string(),
+    ];
+
+    if split {
+        args.push("--split".to_string());
+    }
+
+    let output = std::process::Command::new("objectiveai")
+        .args(&args)
         .stdin(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .output()?;
@@ -38,7 +96,7 @@ fn run_function_execution(
     // Last line is the JSON result
     let last_line = stdout.trim().lines().last()
         .ok_or_else(|| crate::error::Error::ObjectiveAiCli("no output".into()))?;
-    let result: serde_json::Value = serde_json::from_str(last_line)?;
+    let result: ExecutionOutput = serde_json::from_str(last_line)?;
     Ok(result)
 }
 
@@ -50,22 +108,28 @@ pub fn score(psyop: &PsyOp, posts: Vec<QueuedPost>) -> Result<Vec<ScoredPost>, c
     for (i, stage) in psyop.stages.iter().enumerate() {
         eprintln!("Running stage {i} with {} posts...", current.len());
 
-        let items: Vec<_> = current.iter()
+        // Resolve function to inline (fetch if remote)
+        let function = resolve_function(&stage.function)?;
+        let is_vector = is_vector_function(&function);
+
+        // Build input and execute
+        let items: Vec<PostInputValue> = current.iter()
             .map(|s| new_post_input_value(&s.post))
             .collect();
-        let input = PostsInputValue { items };
 
-        let function_json = serde_json::to_string(&stage.function)?;
-        let profile_json = serde_json::to_string(&stage.profile)?;
-        let input_json = serde_json::to_string(&input)?;
+        let (input_json, split) = if is_vector {
+            // Vector: wrap in { items: [...] }
+            let input = PostsInputValue { items };
+            (serde_json::to_string(&input)?, false)
+        } else {
+            // Scalar: pass as plain array, use --split
+            (serde_json::to_string(&items)?, true)
+        };
 
-        let result = run_function_execution(&function_json, &profile_json, &input_json)?;
+        let result = run_function_execution(&function, &stage.profile, &input_json, split)?;
 
         // Extract scores
-        let output = result.get("output").and_then(|o| o.get("output"))
-            .ok_or_else(|| crate::error::Error::Stage { stage: i, message: "missing output".into() })?;
-
-        let scores: Vec<f64> = output.as_array()
+        let scores: Vec<f64> = result.output.output.as_array()
             .ok_or_else(|| crate::error::Error::Stage { stage: i, message: "expected array output".into() })?
             .iter()
             .map(|v| v.as_f64().unwrap_or(0.0))
