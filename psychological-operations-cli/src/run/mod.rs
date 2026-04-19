@@ -1,24 +1,18 @@
-use clap::Subcommand;
+use clap::Args;
 
-#[derive(Subcommand)]
-pub enum Commands {
-    /// Run a psyop by name
-    Standard {
-        name: String,
-        /// Detach when agent needs input, printing PID
-        #[arg(long)]
-        detach_stdin: bool,
-    },
+#[derive(Args)]
+pub struct RunArgs {
+    /// Psyop name
+    pub name: String,
+    /// Detach when agent needs input, printing PID
+    #[arg(long)]
+    pub detach_stdin: bool,
 }
 
-impl Commands {
+impl RunArgs {
     pub async fn handle(self) -> Result<crate::Output, crate::error::Error> {
-        match self {
-            Commands::Standard { name, detach_stdin: _ } => {
-                run_psyop(&name).await?;
-                Ok(crate::Output::Empty)
-            }
-        }
+        run_psyop(&self.name).await?;
+        Ok(crate::Output::Empty)
     }
 }
 

@@ -24,8 +24,8 @@ struct Cli {
 enum Commands {
     /// Run a psyop
     Run {
-        #[command(subcommand)]
-        command: run::Commands,
+        #[command(flatten)]
+        args: run::RunArgs,
     },
     /// Interact with a running agent intervention
     Agent {
@@ -58,7 +58,7 @@ impl std::fmt::Display for Output {
 pub async fn run() -> Result<Output, error::Error> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Run { command } => command.handle().await,
+        Commands::Run { args } => args.handle().await,
         Commands::Agent { command } => command.handle().await,
         Commands::Config { command } => command.handle(),
     }
