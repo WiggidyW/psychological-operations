@@ -2092,6 +2092,7 @@ dependencies = [
  "clap",
  "dirs",
  "git2",
+ "indexmap",
  "objectiveai",
  "reqwest 0.13.2",
  "rusqlite",

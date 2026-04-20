@@ -8,6 +8,7 @@ pub mod playwright_binary;
 pub mod score;
 mod agent;
 mod publish;
+mod invent;
 
 mod run;
 

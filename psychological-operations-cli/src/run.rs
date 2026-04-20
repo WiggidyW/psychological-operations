@@ -3,6 +3,7 @@ use clap::{Args, Parser, Subcommand};
 use crate::agent;
 use crate::config;
 use crate::publish;
+use crate::invent;
 use crate::error;
 
 #[derive(Parser)]
@@ -24,6 +25,11 @@ enum Commands {
     Publish {
         #[command(flatten)]
         args: publish::PublishArgs,
+    },
+    /// Invent a function for scoring posts
+    Invent {
+        #[command(subcommand)]
+        command: invent::Commands,
     },
     /// List all psyops
     List,
@@ -62,6 +68,7 @@ pub async fn run() -> Result<Output, error::Error> {
     match cli.command {
         Commands::Run { args } => args.handle().await,
         Commands::Publish { args } => args.handle(),
+        Commands::Invent { command } => command.handle(),
         Commands::List => list_psyops(),
         Commands::Agent { command } => command.handle().await,
         Commands::Config { command } => command.handle(),
