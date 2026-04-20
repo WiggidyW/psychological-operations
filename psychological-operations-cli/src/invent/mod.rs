@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 use objectiveai::functions::inventions::{
-    ParamsState, ParamsStateOrRemoteCommitOptional,
+    ParamsState,
     state::{AlphaScalarState, AlphaVectorState, Params},
 };
 
@@ -45,73 +45,159 @@ impl InventionParams {
     }
 }
 
+/// Args forwarded verbatim to the objectiveai CLI.
+#[derive(Args)]
+pub struct ForwardArgs {
+    /// Agent reference (e.g. favorite=name or remote=github,owner=x,...)
+    #[arg(long)]
+    agent: Option<String>,
+    /// Inline JSON agent definition
+    #[arg(long)]
+    agent_inline: Option<String>,
+    /// Seed for deterministic mock responses
+    #[arg(long)]
+    seed: Option<i64>,
+    /// Run in the background: print PID and log path, then exit
+    #[arg(long)]
+    detach: bool,
+    /// OpenRouter continuation from a previous response (base64-encoded)
+    #[arg(long)]
+    openrouter_continuation_from_response: Option<String>,
+    /// Claude Agent SDK continuation from a previous response (base64-encoded)
+    #[arg(long)]
+    claude_agent_sdk_continuation_from_response: Option<String>,
+    /// Mock continuation from a previous response (base64-encoded)
+    #[arg(long)]
+    mock_continuation_from_response: Option<String>,
+    /// OpenRouter continuation messages as inline JSON
+    #[arg(long)]
+    openrouter_continuation_messages_inline: Option<String>,
+    /// OpenRouter continuation messages from inline Python code
+    #[arg(long)]
+    openrouter_continuation_messages_python_inline: Option<String>,
+    /// OpenRouter continuation messages from a Python file
+    #[arg(long)]
+    openrouter_continuation_messages_python_file: Option<std::path::PathBuf>,
+    /// Mock continuation messages as inline JSON
+    #[arg(long)]
+    mock_continuation_messages_inline: Option<String>,
+    /// Mock continuation messages from inline Python code
+    #[arg(long)]
+    mock_continuation_messages_python_inline: Option<String>,
+    /// Mock continuation messages from a Python file
+    #[arg(long)]
+    mock_continuation_messages_python_file: Option<std::path::PathBuf>,
+    /// Claude Agent SDK continuation with a session ID
+    #[arg(long)]
+    claude_agent_sdk_continuation_session_id: Option<String>,
+}
+
+impl ForwardArgs {
+    fn append_to(&self, args: &mut Vec<String>) {
+        if let Some(ref v) = self.agent {
+            args.extend(["--agent".into(), v.clone()]);
+        }
+        if let Some(ref v) = self.agent_inline {
+            args.extend(["--agent-inline".into(), v.clone()]);
+        }
+        if let Some(v) = self.seed {
+            args.extend(["--seed".into(), v.to_string()]);
+        }
+        if self.detach {
+            args.push("--detach".into());
+        }
+        if let Some(ref v) = self.openrouter_continuation_from_response {
+            args.extend(["--openrouter-continuation-from-response".into(), v.clone()]);
+        }
+        if let Some(ref v) = self.claude_agent_sdk_continuation_from_response {
+            args.extend(["--claude-agent-sdk-continuation-from-response".into(), v.clone()]);
+        }
+        if let Some(ref v) = self.mock_continuation_from_response {
+            args.extend(["--mock-continuation-from-response".into(), v.clone()]);
+        }
+        if let Some(ref v) = self.openrouter_continuation_messages_inline {
+            args.extend(["--openrouter-continuation-messages-inline".into(), v.clone()]);
+        }
+        if let Some(ref v) = self.openrouter_continuation_messages_python_inline {
+            args.extend(["--openrouter-continuation-messages-python-inline".into(), v.clone()]);
+        }
+        if let Some(ref v) = self.openrouter_continuation_messages_python_file {
+            args.extend(["--openrouter-continuation-messages-python-file".into(), v.display().to_string()]);
+        }
+        if let Some(ref v) = self.mock_continuation_messages_inline {
+            args.extend(["--mock-continuation-messages-inline".into(), v.clone()]);
+        }
+        if let Some(ref v) = self.mock_continuation_messages_python_inline {
+            args.extend(["--mock-continuation-messages-python-inline".into(), v.clone()]);
+        }
+        if let Some(ref v) = self.mock_continuation_messages_python_file {
+            args.extend(["--mock-continuation-messages-python-file".into(), v.display().to_string()]);
+        }
+        if let Some(ref v) = self.claude_agent_sdk_continuation_session_id {
+            args.extend(["--claude-agent-sdk-continuation-session-id".into(), v.clone()]);
+        }
+    }
+}
+
 #[derive(Subcommand)]
 pub enum Commands {
     /// Invent a scalar function for scoring individual posts
     AlphaScalar {
         #[command(flatten)]
         params: InventionParams,
-        /// Agent reference (e.g. favorite=name or remote=github,owner=x,...)
-        #[arg(long)]
-        agent: String,
-        /// Seed for deterministic mock responses
-        #[arg(long)]
-        seed: Option<i64>,
+        #[command(flatten)]
+        forward: ForwardArgs,
     },
     /// Invent a vector function for ranking posts
     AlphaVector {
         #[command(flatten)]
         params: InventionParams,
-        /// Agent reference (e.g. favorite=name or remote=github,owner=x,...)
-        #[arg(long)]
-        agent: String,
-        /// Seed for deterministic mock responses
-        #[arg(long)]
-        seed: Option<i64>,
+        #[command(flatten)]
+        forward: ForwardArgs,
     },
-    /// Invent from existing state (remote reference)
+    /// Invent from existing state (remote reference or inline JSON)
     Remote {
         /// State reference (e.g. remote=mock,name=inv-good-sl)
-        #[arg(long)]
-        state: String,
-        /// Agent reference
-        #[arg(long)]
-        agent: String,
-        /// Seed for deterministic mock responses
-        #[arg(long)]
-        seed: Option<i64>,
+        #[arg(long, required_unless_present = "state_inline")]
+        state: Option<String>,
+        /// Inline JSON state
+        #[arg(long, conflicts_with = "state")]
+        state_inline: Option<String>,
+        #[command(flatten)]
+        forward: ForwardArgs,
     },
 }
 
 impl Commands {
     pub fn handle(self) -> Result<crate::Output, crate::error::Error> {
         match self {
-            Commands::AlphaScalar { params, agent, seed } => {
+            Commands::AlphaScalar { params, forward } => {
                 let p = params.into_params();
-                let state = ParamsStateOrRemoteCommitOptional::Inline(
-                    ParamsState::AlphaScalar(AlphaScalarState {
-                        params: p,
-                        input_schema: Some(input::scalar_input_schema()),
-                    }),
-                );
-                run_invention(&state, &agent, seed)
+                let state = ParamsState::AlphaScalar(AlphaScalarState {
+                    params: p,
+                    input_schema: Some(input::scalar_input_schema()),
+                });
+                run_invention(&state, &forward)
             }
-            Commands::AlphaVector { params, agent, seed } => {
+            Commands::AlphaVector { params, forward } => {
                 let p = params.into_params();
-                let state = ParamsStateOrRemoteCommitOptional::Inline(
-                    ParamsState::AlphaVector(AlphaVectorState {
-                        params: p,
-                        input_schema: Some(input::vector_input_schema()),
-                    }),
-                );
-                run_invention(&state, &agent, seed)
+                let state = ParamsState::AlphaVector(AlphaVectorState {
+                    params: p,
+                    input_schema: Some(input::vector_input_schema()),
+                });
+                run_invention(&state, &forward)
             }
-            Commands::Remote { state, agent, seed } => {
-                // Fetch the remote state
-                let fetched = fetch_state(&state)?;
-                let filled = fill_schema_if_missing(fetched)?;
-                let state = ParamsStateOrRemoteCommitOptional::Inline(filled);
-                run_invention(&state, &agent, seed)
+            Commands::Remote { state, state_inline, forward } => {
+                let resolved = if let Some(inline) = state_inline {
+                    let parsed: ParamsState = serde_json::from_str(&inline)?;
+                    fill_schema_if_missing(parsed)
+                } else if let Some(ref ref_str) = state {
+                    let fetched = fetch_state(ref_str)?;
+                    fill_schema_if_missing(fetched)
+                } else {
+                    return Err(crate::error::Error::Other("--state or --state-inline is required".into()));
+                };
+                run_invention(&resolved, &forward)
             }
         }
     }
@@ -134,80 +220,74 @@ fn fetch_state(ref_str: &str) -> Result<ParamsState, crate::error::Error> {
 }
 
 /// Fill input_schema if it's missing, using our post schema.
-fn fill_schema_if_missing(state: ParamsState) -> Result<ParamsState, crate::error::Error> {
+fn fill_schema_if_missing(state: ParamsState) -> ParamsState {
     match state {
         ParamsState::AlphaScalar(mut s) => {
             if s.input_schema.is_none() {
                 s.input_schema = Some(input::scalar_input_schema());
             }
-            Ok(ParamsState::AlphaScalar(s))
+            ParamsState::AlphaScalar(s)
         }
         ParamsState::AlphaVector(mut s) => {
             if s.input_schema.is_none() {
                 s.input_schema = Some(input::vector_input_schema());
             }
-            Ok(ParamsState::AlphaVector(s))
+            ParamsState::AlphaVector(s)
         }
         ParamsState::AlphaScalarBranch(mut s) => {
             if s.input_schema.is_none() {
                 s.input_schema = Some(input::scalar_input_schema());
             }
-            Ok(ParamsState::AlphaScalarBranch(s))
+            ParamsState::AlphaScalarBranch(s)
         }
         ParamsState::AlphaScalarLeaf(mut s) => {
             if s.input_schema.is_none() {
                 s.input_schema = Some(input::scalar_input_schema());
             }
-            Ok(ParamsState::AlphaScalarLeaf(s))
+            ParamsState::AlphaScalarLeaf(s)
         }
         ParamsState::AlphaVectorBranch(mut s) => {
             if s.input_schema.is_none() {
                 s.input_schema = Some(input::vector_input_schema());
             }
-            Ok(ParamsState::AlphaVectorBranch(s))
+            ParamsState::AlphaVectorBranch(s)
         }
         ParamsState::AlphaVectorLeaf(mut s) => {
             if s.input_schema.is_none() {
                 s.input_schema = Some(input::vector_input_schema());
             }
-            Ok(ParamsState::AlphaVectorLeaf(s))
+            ParamsState::AlphaVectorLeaf(s)
         }
     }
 }
 
-/// Shell out to objectiveai CLI to run the invention.
+/// Shell out to objectiveai CLI via `remote --state-inline`.
 fn run_invention(
-    state: &ParamsStateOrRemoteCommitOptional,
-    agent: &str,
-    seed: Option<i64>,
+    state: &ParamsState,
+    fwd: &ForwardArgs,
 ) -> Result<crate::Output, crate::error::Error> {
     let state_json = serde_json::to_string(state)?;
 
     let mut args = vec![
-        "functions".to_string(),
-        "inventions".to_string(),
-        "recursive".to_string(),
-        "create".to_string(),
-        "remote".to_string(),
-        "--state-inline".to_string(),
+        "functions".into(),
+        "inventions".into(),
+        "recursive".into(),
+        "create".into(),
+        "remote".into(),
+        "--state-inline".into(),
         state_json,
-        "--agent".to_string(),
-        agent.to_string(),
     ];
 
-    if let Some(s) = seed {
-        args.push("--seed".to_string());
-        args.push(s.to_string());
-    }
+    fwd.append_to(&mut args);
 
-    let output = std::process::Command::new("objectiveai")
+    let status = std::process::Command::new("objectiveai")
         .args(&args)
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .status()?;
 
-    if !output.success() {
+    if !status.success() {
         return Err(crate::error::Error::ObjectiveAiCli("invention failed".into()));
     }
 
