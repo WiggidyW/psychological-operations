@@ -1,5 +1,6 @@
 pub mod discord;
 pub mod http;
+pub mod json_body;
 pub mod stderr;
 pub mod stdout;
 pub mod telegram;

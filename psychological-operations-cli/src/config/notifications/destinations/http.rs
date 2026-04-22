@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::MediaUrl;
 use crate::psyop::PsyOp;
 use crate::score::ScoredPost;
+
+use super::json_body;
 
 /// Configuration for an HTTP notification destination. Sends a JSON body
 /// describing the psyop and its scored output to an arbitrary endpoint.
@@ -19,50 +20,13 @@ pub struct Http {
 
 fn default_method() -> String { "POST".to_string() }
 
-/// Top-level body sent to the configured endpoint.
-#[derive(Debug, Serialize)]
-pub struct Body<'a> {
-    pub psyop: &'a str,
-    pub results: Vec<Result_<'a>>,
-}
-
-/// One scored tweet in the body.
-#[derive(Debug, Serialize)]
-#[serde(rename = "Result")]
-pub struct Result_<'a> {
-    pub score: f64,
-    pub id: &'a str,
-    pub handle: &'a str,
-    pub text: &'a str,
-    pub images: &'a [MediaUrl],
-    pub videos: &'a [MediaUrl],
-    pub created: &'a str,
-    pub community: Option<&'a str>,
-    pub query: &'a str,
-    pub url: String,
-}
-
 pub async fn send(
     cfg: &Http,
     psyop_name: &str,
     _psyop: &PsyOp,
     output: &[&ScoredPost],
-) -> std::result::Result<(), crate::error::Error> {
-    let body = Body {
-        psyop: psyop_name,
-        results: output.iter().map(|s| Result_ {
-            score: s.score,
-            id: &s.post.id,
-            handle: &s.post.handle,
-            text: &s.post.text,
-            images: &s.post.images,
-            videos: &s.post.videos,
-            created: &s.post.created,
-            community: s.post.community.as_deref(),
-            query: &s.post.query,
-            url: format!("https://x.com/{}/status/{}", s.post.handle, s.post.id),
-        }).collect(),
-    };
+) -> Result<(), crate::error::Error> {
+    let body = json_body::build(psyop_name, output);
 
     let method = reqwest::Method::from_bytes(cfg.method.as_bytes())
         .map_err(|e| crate::error::Error::Other(format!("invalid http method \"{}\": {e}", cfg.method)))?;
