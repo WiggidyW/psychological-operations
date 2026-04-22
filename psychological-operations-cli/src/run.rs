@@ -118,7 +118,6 @@ impl RunArgs {
 }
 
 async fn run_psyop(name: &str) -> Result<(), error::Error> {
-    eprintln!("[run_psyop] loading config");
     let cfg = config::load();
     let psyop_dir = config::psyops_dir().join(name);
     let config_path = psyop_dir.join("psyop.json");
@@ -131,7 +130,6 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
     let psyop: crate::psyop::PsyOp = serde_json::from_str(&data)?;
     psyop.validate()?;
 
-    eprintln!("[run_psyop] resolving commit SHA");
     let repo = git2::Repository::open(&psyop_dir)?;
     let head = repo.head()?.peel_to_commit()?;
     let commit_sha = head.id().to_string();
@@ -145,34 +143,23 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
 
     let already_queued = db.count_queued(name)?;
     let shortfall = target_count.saturating_sub(already_queued);
-    eprintln!("[run_psyop] target={target_count} queued={already_queued} shortfall={shortfall}");
 
     if shortfall > 0 {
-        eprintln!("[run_psyop] spawning playwright");
         let mut pw = crate::playwright::Playwright::spawn()?;
 
-        eprintln!("[run_psyop] opening tabs for {} queries", psyop.queries.len());
         let states = pw.open_tabs(&psyop.queries)?;
-        eprintln!("[run_psyop] tab states: {states:?}");
         for (query, state) in &states {
             if state == "unexpected" {
                 return Err(error::Error::Playwright(format!("unexpected page state for query \"{query}\"")));
             }
         }
 
-        eprintln!("[run_psyop] scraping tweets (need={shortfall})");
         let mut collected = 0;
         while collected < shortfall {
-            eprintln!("[run_psyop] next_tweet (collected={collected}/{shortfall})");
-            let Some((tweet, query)) = pw.next_tweet()? else {
-                eprintln!("[run_psyop] next_tweet returned None — done");
-                break
-            };
-            eprintln!("[run_psyop] got tweet id={} query={} likes={}", tweet.id, query, tweet.likes);
+            let Some((tweet, query)) = pw.next_tweet()? else { break };
 
             let validation = crate::psyop::valid_for_psyop(&psyop, &tweet.created, tweet.likes, &now);
             if !validation.valid {
-                eprintln!("[run_psyop] tweet invalid: {:?}", validation.reason);
                 if validation.reason == Some("max_age") {
                     pw.close_query(&query)?;
                 }
@@ -204,14 +191,10 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
             collected += 1;
         }
 
-        eprintln!("[run_psyop] closing playwright");
         pw.close()?;
     }
 
-    // Score the target_count oldest queued posts only
     let posts = db.get_oldest_queued(name, target_count)?;
-    let scored_count = posts.len();
-    eprintln!("[run_psyop] scoring {scored_count} posts");
     let mut scored_posts: Vec<crate::score::ScoredPost> = Vec::new();
     if !posts.is_empty() {
         scored_posts = crate::score::score(&psyop, posts)?;
