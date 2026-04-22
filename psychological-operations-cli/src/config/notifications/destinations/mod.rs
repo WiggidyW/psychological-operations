@@ -1,10 +1,12 @@
 pub mod discord;
+pub mod exec;
 pub mod file;
 pub mod http;
 pub mod json_body;
 pub mod stderr;
 pub mod stdout;
 pub mod telegram;
+pub mod websocket;
 
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +28,10 @@ pub enum Destination {
     Stderr(stderr::Stderr),
     #[serde(rename = "file")]
     File(file::File),
+    #[serde(rename = "exec")]
+    Exec(exec::Exec),
+    #[serde(rename = "websocket")]
+    WebSocket(websocket::WebSocket),
 }
 
 pub async fn notify(
@@ -53,6 +59,12 @@ pub async fn notify(
             }
             Destination::File(cfg) => {
                 file::send(cfg, psyop_name, psyop, output).await
+            }
+            Destination::Exec(cfg) => {
+                exec::send(cfg, psyop_name, psyop, output).await
+            }
+            Destination::WebSocket(cfg) => {
+                websocket::send(cfg, psyop_name, psyop, output).await
             }
         }
     });
