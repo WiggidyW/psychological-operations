@@ -118,6 +118,7 @@ impl RunArgs {
 }
 
 async fn run_psyop(name: &str) -> Result<(), error::Error> {
+    eprintln!("[run_psyop] loading config");
     let cfg = config::load();
     let psyop_dir = config::psyops_dir().join(name);
     let config_path = psyop_dir.join("psyop.json");
@@ -130,13 +131,10 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
     let psyop: crate::psyop::PsyOp = serde_json::from_str(&data)?;
     psyop.validate()?;
 
-    // Get commit SHA
+    eprintln!("[run_psyop] resolving commit SHA");
     let repo = git2::Repository::open(&psyop_dir)?;
     let head = repo.head()?.peel_to_commit()?;
     let commit_sha = head.id().to_string();
-
-    // Scrape
-    let mut pw = crate::playwright::Playwright::spawn()?;
 
     let target_count = psyop.stages.first()
         .and_then(|s| s.count)
@@ -145,66 +143,95 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
 
     let db = crate::db::Db::open()?;
 
-    // Open tabs
-    let states = pw.open_tabs(&psyop.queries)?;
-    for (query, state) in &states {
-        if state == "unexpected" {
-            // TODO: agent intervention
-            return Err(error::Error::Playwright(format!("unexpected page state for query \"{query}\"")));
+    let already_queued = db.count_queued(name)?;
+    let shortfall = target_count.saturating_sub(already_queued);
+    eprintln!("[run_psyop] target={target_count} queued={already_queued} shortfall={shortfall}");
+
+    if shortfall > 0 {
+        eprintln!("[run_psyop] spawning playwright");
+        let mut pw = crate::playwright::Playwright::spawn()?;
+
+        eprintln!("[run_psyop] opening tabs for {} queries", psyop.queries.len());
+        let states = pw.open_tabs(&psyop.queries)?;
+        eprintln!("[run_psyop] tab states: {states:?}");
+        for (query, state) in &states {
+            if state == "unexpected" {
+                return Err(error::Error::Playwright(format!("unexpected page state for query \"{query}\"")));
+            }
         }
+
+        eprintln!("[run_psyop] scraping tweets (need={shortfall})");
+        let mut collected = 0;
+        while collected < shortfall {
+            eprintln!("[run_psyop] next_tweet (collected={collected}/{shortfall})");
+            let Some((tweet, query)) = pw.next_tweet()? else {
+                eprintln!("[run_psyop] next_tweet returned None — done");
+                break
+            };
+            eprintln!("[run_psyop] got tweet id={} query={} likes={}", tweet.id, query, tweet.likes);
+
+            let validation = crate::psyop::valid_for_psyop(&psyop, &tweet.created, tweet.likes, &now);
+            if !validation.valid {
+                eprintln!("[run_psyop] tweet invalid: {:?}", validation.reason);
+                if validation.reason == Some("max_age") {
+                    pw.close_query(&query)?;
+                }
+                continue;
+            }
+
+            let post = crate::db::QueuedPost {
+                id: tweet.id,
+                scrape_id: name.to_string(),
+                query: query.clone(),
+                handle: tweet.handle,
+                text: tweet.text,
+                images: tweet.images,
+                videos: tweet.videos,
+                created: tweet.created,
+                community: tweet.community,
+                psyop: name.to_string(),
+                psyop_commit_sha: commit_sha.clone(),
+            };
+
+            let inserted = db.insert_post(&post)?;
+            if !inserted {
+                if db.has_existing_post(&post.id, &query, name, &commit_sha)? {
+                    pw.close_query(&query)?;
+                }
+                continue;
+            }
+
+            collected += 1;
+        }
+
+        eprintln!("[run_psyop] closing playwright");
+        pw.close()?;
     }
 
-    // Scrape tweets
-    let mut collected = 0;
-    while collected < target_count {
-        let Some((tweet, query)) = pw.next_tweet()? else { break };
-
-        let validation = crate::psyop::valid_for_psyop(&psyop, &tweet.created, tweet.likes, &now);
-        if !validation.valid {
-            if validation.reason == Some("max_age") {
-                pw.close_query(&query)?;
-            }
-            continue;
-        }
-
-        let post = crate::db::QueuedPost {
-            id: tweet.id,
-            scrape_id: name.to_string(),
-            query: query.clone(),
-            handle: tweet.handle,
-            text: tweet.text,
-            images: tweet.images,
-            videos: tweet.videos,
-            created: tweet.created,
-            community: tweet.community,
-            psyop: name.to_string(),
-            psyop_commit_sha: commit_sha.clone(),
-        };
-
-        let inserted = db.insert_post(&post)?;
-        if !inserted {
-            if db.has_existing_post(&post.id, &query, name, &commit_sha)? {
-                pw.close_query(&query)?;
-            }
-            continue;
-        }
-
-        collected += 1;
-    }
-
-    pw.close()?;
-
-    // Score
-    let posts = db.get_posts(name)?;
+    // Score the target_count oldest queued posts only
+    let posts = db.get_oldest_queued(name, target_count)?;
+    let scored_count = posts.len();
+    eprintln!("[run_psyop] scoring {scored_count} posts");
+    let mut scored_posts: Vec<crate::score::ScoredPost> = Vec::new();
     if !posts.is_empty() {
-        let scored = crate::score::score(&psyop, posts)?;
-        let ids: Vec<String> = scored.iter().map(|s| s.post.id.clone()).collect();
-        let scores: Vec<f64> = scored.iter().map(|s| s.score).collect();
+        scored_posts = crate::score::score(&psyop, posts)?;
+        let ids: Vec<String> = scored_posts.iter().map(|s| s.post.id.clone()).collect();
+        let scores: Vec<f64> = scored_posts.iter().map(|s| s.score).collect();
         db.finish_posts(&ids, &scores)?;
     }
 
     // Notify
-    config::notifications::destinations::notify(&cfg.notifications, &format!("PsyOp \"{name}\": scraped {collected} posts.")).await;
+    let mut message = format!("PsyOp \"{name}\": scored {scored_count} posts.");
+    if !scored_posts.is_empty() {
+        message.push('\n');
+        for s in &scored_posts {
+            message.push_str(&format!(
+                "\n{:.4} — https://x.com/{}/status/{}",
+                s.score, s.post.handle, s.post.id,
+            ));
+        }
+    }
+    config::notifications::destinations::notify(&cfg.notifications, &message).await;
 
     Ok(())
 }
