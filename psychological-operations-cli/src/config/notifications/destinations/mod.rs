@@ -1,5 +1,7 @@
 pub mod discord;
 pub mod http;
+pub mod stderr;
+pub mod stdout;
 pub mod telegram;
 
 use serde::{Deserialize, Serialize};
@@ -16,6 +18,10 @@ pub enum Destination {
     Telegram { bot_token: String, chat_id: String },
     #[serde(rename = "http")]
     Http(http::Http),
+    #[serde(rename = "stdout")]
+    Stdout(stdout::Stdout),
+    #[serde(rename = "stderr")]
+    Stderr(stderr::Stderr),
 }
 
 pub async fn notify(
@@ -34,6 +40,12 @@ pub async fn notify(
             }
             Destination::Http(cfg) => {
                 http::send(cfg, psyop_name, psyop, output).await
+            }
+            Destination::Stdout(cfg) => {
+                stdout::send(cfg, psyop_name, psyop, output).await
+            }
+            Destination::Stderr(cfg) => {
+                stderr::send(cfg, psyop_name, psyop, output).await
             }
         }
     });
