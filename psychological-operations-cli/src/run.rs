@@ -220,18 +220,22 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
         db.finish_posts(&ids, &scores)?;
     }
 
-    // Notify
-    let mut message = format!("PsyOp \"{name}\": scored {scored_count} posts.");
-    if !scored_posts.is_empty() {
-        message.push('\n');
-        for s in &scored_posts {
-            message.push_str(&format!(
-                "\n{:.4} — https://x.com/{}/status/{}",
-                s.score, s.post.handle, s.post.id,
-            ));
-        }
+    // Apply top-level psyop threshold + count to produce the final output set.
+    // scored_posts is already sorted by score descending (per score::score).
+    let mut output: Vec<&crate::score::ScoredPost> = scored_posts.iter().collect();
+    if let Some(threshold) = psyop.threshold {
+        output.retain(|s| s.score >= threshold);
     }
-    config::notifications::destinations::notify(&cfg.notifications, &message).await;
+    if let Some(count) = psyop.count {
+        output.truncate(count as usize);
+    }
+
+    config::notifications::destinations::notify(
+        &cfg.notifications,
+        name,
+        &psyop,
+        &output,
+    ).await;
 
     Ok(())
 }

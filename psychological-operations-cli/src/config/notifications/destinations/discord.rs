@@ -1,11 +1,25 @@
+use crate::psyop::PsyOp;
+use crate::score::ScoredPost;
+
 const MAX_CONTENT_LENGTH: usize = 2000;
 
-pub async fn send(webhook_url: &str, message: &str) -> Result<(), crate::error::Error> {
-    let content = if message.len() > MAX_CONTENT_LENGTH {
-        format!("{}...", &message[..MAX_CONTENT_LENGTH - 3])
-    } else {
-        message.to_string()
-    };
+pub async fn send(
+    webhook_url: &str,
+    psyop_name: &str,
+    _psyop: &PsyOp,
+    output: &[&ScoredPost],
+) -> Result<(), crate::error::Error> {
+    let mut content = format!("**PsyOp \"{psyop_name}\"**");
+    for s in output {
+        content.push_str(&format!(
+            "\n{:.4} — https://x.com/{}/status/{}",
+            s.score, s.post.handle, s.post.id,
+        ));
+    }
+    if content.len() > MAX_CONTENT_LENGTH {
+        content.truncate(MAX_CONTENT_LENGTH - 3);
+        content.push_str("...");
+    }
 
     let client = reqwest::Client::new();
     let res = client
