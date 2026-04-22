@@ -1,4 +1,5 @@
 pub mod discord;
+pub mod http;
 pub mod telegram;
 
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,8 @@ pub enum Destination {
     Discord { webhook_url: String },
     #[serde(rename = "telegram")]
     Telegram { bot_token: String, chat_id: String },
+    #[serde(rename = "http")]
+    Http(http::Http),
 }
 
 pub async fn notify(
@@ -21,15 +24,20 @@ pub async fn notify(
     psyop: &PsyOp,
     output: &[&ScoredPost],
 ) {
-    for dest in destinations {
-        let result = match dest {
+    let futs = destinations.iter().map(|dest| async move {
+        match dest {
             Destination::Discord { webhook_url } => {
                 discord::send(webhook_url, psyop_name, psyop, output).await
             }
             Destination::Telegram { bot_token, chat_id } => {
                 telegram::send(bot_token, chat_id, psyop_name, psyop, output).await
             }
-        };
+            Destination::Http(cfg) => {
+                http::send(cfg, psyop_name, psyop, output).await
+            }
+        }
+    });
+    for result in futures::future::join_all(futs).await {
         if let Err(e) = result {
             eprintln!("notification failed: {e}");
         }
