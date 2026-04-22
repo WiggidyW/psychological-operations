@@ -140,6 +140,41 @@ impl Db {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Count queued posts for this psyop.
+    pub fn count_queued(&self, psyop: &str) -> Result<usize, crate::error::Error> {
+        let n: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM posts_queue WHERE psyop = ?1",
+            params![psyop],
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
+    }
+
+    /// Take the `limit` oldest queued posts for this psyop, oldest `scraped_at` first.
+    pub fn get_oldest_queued(&self, psyop: &str, limit: usize) -> Result<Vec<QueuedPost>, crate::error::Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, scrape_id, query, handle, text, images, videos, created, community, psyop, psyop_commit_sha FROM posts_queue WHERE psyop = ?1 ORDER BY scraped_at ASC LIMIT ?2"
+        )?;
+        let rows = stmt.query_map(params![psyop, limit as i64], |row| {
+            let images_str: String = row.get(5)?;
+            let videos_str: String = row.get(6)?;
+            Ok(QueuedPost {
+                id: row.get(0)?,
+                scrape_id: row.get(1)?,
+                query: row.get(2)?,
+                handle: row.get(3)?,
+                text: row.get(4)?,
+                images: serde_json::from_str(&images_str).unwrap_or_default(),
+                videos: serde_json::from_str(&videos_str).unwrap_or_default(),
+                created: row.get(7)?,
+                community: row.get(8)?,
+                psyop: row.get(9)?,
+                psyop_commit_sha: row.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     pub fn finish_posts(&self, ids: &[String], scores: &[f64]) -> Result<(), crate::error::Error> {
         let tx = self.conn.unchecked_transaction()?;
         for (id, score) in ids.iter().zip(scores.iter()) {
