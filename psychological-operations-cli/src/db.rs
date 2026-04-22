@@ -14,6 +14,9 @@ const SCHEMA: &str = "
         videos TEXT NOT NULL DEFAULT '[]',
         created TEXT NOT NULL,
         community TEXT,
+        likes INTEGER NOT NULL DEFAULT 0,
+        retweets INTEGER NOT NULL DEFAULT 0,
+        replies INTEGER NOT NULL DEFAULT 0,
         psyop TEXT NOT NULL,
         psyop_commit_sha TEXT NOT NULL,
         scraped_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -27,12 +30,16 @@ const SCHEMA: &str = "
         videos TEXT NOT NULL DEFAULT '[]',
         created TEXT NOT NULL,
         community TEXT,
+        likes INTEGER NOT NULL DEFAULT 0,
+        retweets INTEGER NOT NULL DEFAULT 0,
+        replies INTEGER NOT NULL DEFAULT 0,
         score REAL NOT NULL,
         psyop TEXT NOT NULL,
         psyop_commit_sha TEXT NOT NULL,
         scraped_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 ";
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MediaUrl {
@@ -50,6 +57,9 @@ pub struct QueuedPost {
     pub videos: Vec<MediaUrl>,
     pub created: String,
     pub community: Option<String>,
+    pub likes: u64,
+    pub retweets: u64,
+    pub replies: u64,
     pub psyop: String,
     pub psyop_commit_sha: String,
 }
@@ -91,10 +101,11 @@ impl Db {
         let videos_json = serde_json::to_string(&post.videos)?;
 
         self.conn.execute(
-            "INSERT OR IGNORE INTO posts_queue (id, scrape_id, query, handle, text, images, videos, created, community, psyop, psyop_commit_sha)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT OR IGNORE INTO posts_queue (id, scrape_id, query, handle, text, images, videos, created, community, likes, retweets, replies, psyop, psyop_commit_sha)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![post.id, post.scrape_id, post.query, post.handle, post.text,
                     images_json, videos_json, post.created, post.community,
+                    post.likes as i64, post.retweets as i64, post.replies as i64,
                     post.psyop, post.psyop_commit_sha],
         )?;
         Ok(true)
@@ -118,7 +129,7 @@ impl Db {
 
     pub fn get_posts(&self, scrape_id: &str) -> Result<Vec<QueuedPost>, crate::error::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, scrape_id, query, handle, text, images, videos, created, community, psyop, psyop_commit_sha FROM posts_queue WHERE scrape_id = ?1 ORDER BY scraped_at DESC"
+            "SELECT id, scrape_id, query, handle, text, images, videos, created, community, likes, retweets, replies, psyop, psyop_commit_sha FROM posts_queue WHERE scrape_id = ?1 ORDER BY scraped_at DESC"
         )?;
         let rows = stmt.query_map(params![scrape_id], |row| {
             let images_str: String = row.get(5)?;
@@ -133,8 +144,11 @@ impl Db {
                 videos: serde_json::from_str(&videos_str).unwrap_or_default(),
                 created: row.get(7)?,
                 community: row.get(8)?,
-                psyop: row.get(9)?,
-                psyop_commit_sha: row.get(10)?,
+                likes: row.get::<_, i64>(9)? as u64,
+                retweets: row.get::<_, i64>(10)? as u64,
+                replies: row.get::<_, i64>(11)? as u64,
+                psyop: row.get(12)?,
+                psyop_commit_sha: row.get(13)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -153,7 +167,7 @@ impl Db {
     /// Take the `limit` oldest queued posts for this psyop, oldest `scraped_at` first.
     pub fn get_oldest_queued(&self, psyop: &str, limit: usize) -> Result<Vec<QueuedPost>, crate::error::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, scrape_id, query, handle, text, images, videos, created, community, psyop, psyop_commit_sha FROM posts_queue WHERE psyop = ?1 ORDER BY scraped_at ASC LIMIT ?2"
+            "SELECT id, scrape_id, query, handle, text, images, videos, created, community, likes, retweets, replies, psyop, psyop_commit_sha FROM posts_queue WHERE psyop = ?1 ORDER BY scraped_at ASC LIMIT ?2"
         )?;
         let rows = stmt.query_map(params![psyop, limit as i64], |row| {
             let images_str: String = row.get(5)?;
@@ -168,8 +182,11 @@ impl Db {
                 videos: serde_json::from_str(&videos_str).unwrap_or_default(),
                 created: row.get(7)?,
                 community: row.get(8)?,
-                psyop: row.get(9)?,
-                psyop_commit_sha: row.get(10)?,
+                likes: row.get::<_, i64>(9)? as u64,
+                retweets: row.get::<_, i64>(10)? as u64,
+                replies: row.get::<_, i64>(11)? as u64,
+                psyop: row.get(12)?,
+                psyop_commit_sha: row.get(13)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -186,8 +203,8 @@ impl Db {
             if !exists { continue; }
 
             tx.execute(
-                "INSERT OR IGNORE INTO posts_completed (id, scrape_id, query, text, images, videos, created, community, score, psyop, psyop_commit_sha, scraped_at)
-                 SELECT id, scrape_id, query, text, images, videos, created, community, ?2, psyop, psyop_commit_sha, scraped_at FROM posts_queue WHERE id = ?1",
+                "INSERT OR IGNORE INTO posts_completed (id, scrape_id, query, text, images, videos, created, community, likes, retweets, replies, score, psyop, psyop_commit_sha, scraped_at)
+                 SELECT id, scrape_id, query, text, images, videos, created, community, likes, retweets, replies, ?2, psyop, psyop_commit_sha, scraped_at FROM posts_queue WHERE id = ?1",
                 params![id, score],
             )?;
             tx.execute("DELETE FROM posts_queue WHERE id = ?1", params![id])?;

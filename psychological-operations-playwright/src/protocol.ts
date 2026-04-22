@@ -71,23 +71,24 @@ async function scrollTab(tab: QueryTab): Promise<void> {
 
 // ── Command handlers ────────────────────────────────────────────────────────
 
-async function openTabs(queries: string[]): Promise<Record<string, string>> {
+async function openTabs(urls: string[]): Promise<Record<string, string>> {
   const ctx = await ensureContext();
   const results: Record<string, string> = {};
 
-  for (const query of queries) {
+  for (const url of urls) {
     const page = await ctx.newPage();
-    const url = `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=live`;
     await page.goto(url, { waitUntil: "domcontentloaded" });
     const state = await validatePage(page);
-    results[query] = state;
+    results[url] = state;
 
     if (state === "empty" || state === "unexpected") {
       if (state === "empty") await page.close();
       continue;
     }
 
-    tabs.push({ query, page, buffer: [], seen: new Set(), open: true, staleScrolls: 0 });
+    // Use the URL as the tab's stable identifier; the Rust caller maps it
+    // back to the originating filter for validation.
+    tabs.push({ query: url, page, buffer: [], seen: new Set(), open: true, staleScrolls: 0 });
   }
 
   // Close default blank tab
@@ -162,7 +163,7 @@ async function close(): Promise<void> {
 export async function handleCommand(cmd: Record<string, unknown>): Promise<unknown> {
   switch (cmd["cmd"]) {
     case "open_tabs":
-      return { states: await openTabs(cmd["queries"] as string[]) };
+      return { states: await openTabs(cmd["urls"] as string[]) };
 
     case "next_tweet": {
       const result = await nextTweet();

@@ -14,6 +14,10 @@ pub struct TweetData {
     pub created: String,
     pub community: Option<String>,
     pub likes: u64,
+    #[serde(default)]
+    pub retweets: u64,
+    #[serde(default)]
+    pub replies: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,10 +80,10 @@ impl Playwright {
         Ok(value)
     }
 
-    pub fn open_tabs(&mut self, queries: &[String]) -> Result<std::collections::HashMap<String, String>, crate::error::Error> {
+    pub fn open_tabs(&mut self, urls: &[String]) -> Result<std::collections::HashMap<String, String>, crate::error::Error> {
         let resp = self.send(&serde_json::json!({
             "cmd": "open_tabs",
-            "queries": queries,
+            "urls": urls,
         }))?;
         let parsed: OpenTabsResponse = serde_json::from_value(resp)?;
         Ok(parsed.states)

@@ -20,14 +20,50 @@ pub struct Stage {
     pub threshold: Option<f64>,
 }
 
+/// A single search filter. At least one of `query` or `community` must be set
+/// (validated at PsyOp::validate). Per-filter min_* values combine with the
+/// PsyOp's root-level min_* values by taking the greater of the two.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Filter {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub community: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_likes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_retweets: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_replies: Option<u64>,
+}
+
+impl Filter {
+    /// Build the X.com search URL this filter targets. `community` switches the
+    /// URL path entirely; `query` populates the `q=` parameter on either path.
+    pub fn url(&self) -> String {
+        let q = self.query.as_deref().unwrap_or("");
+        let q_enc = urlencoding::encode(q);
+        match &self.community {
+            Some(community_id) => format!(
+                "https://x.com/i/communities/{community_id}/search?q={q_enc}&f=live",
+            ),
+            None => format!(
+                "https://x.com/search?q={q_enc}&src=typed_query&f=live",
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PsyOp {
     pub agent: InlineAgentBaseWithFallbacksOrRemoteCommitOptional,
-    pub queries: Vec<String>,
+    pub filters: Vec<Filter>,
     pub count: Option<u64>,
     pub threshold: Option<f64>,
     pub max_age: Option<u64>,
     pub min_likes: Option<u64>,
+    pub min_retweets: Option<u64>,
+    pub min_replies: Option<u64>,
     pub stages: Vec<Stage>,
     #[serde(default)]
     pub notifications: Vec<Destination>,
@@ -56,6 +92,16 @@ impl PsyOp {
         if self.stages.is_empty() {
             return Err(crate::error::Error::InvalidPsyop("stages must not be empty".into()));
         }
+        if self.filters.is_empty() {
+            return Err(crate::error::Error::InvalidPsyop("filters must not be empty".into()));
+        }
+        for (i, f) in self.filters.iter().enumerate() {
+            if f.query.is_none() && f.community.is_none() {
+                return Err(crate::error::Error::InvalidPsyop(
+                    format!("filter[{i}] must set at least one of `query` or `community`"),
+                ));
+            }
+        }
         let first = &self.stages[0];
         if first.count.is_none() {
             return Err(crate::error::Error::InvalidPsyop("first stage must have a count".into()));
@@ -72,7 +118,21 @@ pub struct ValidationResult {
     pub reason: Option<&'static str>,
 }
 
-pub fn valid_for_psyop(psyop: &PsyOp, created: &str, likes: u64, now: &chrono::DateTime<chrono::Utc>) -> ValidationResult {
+/// Combine root and per-filter minimums by taking the greater of the two.
+/// Root acts as a global floor; per-filter can raise but not lower it.
+fn effective_min(root: Option<u64>, per_filter: Option<u64>) -> u64 {
+    root.unwrap_or(0).max(per_filter.unwrap_or(0))
+}
+
+pub fn valid_for_psyop(
+    psyop: &PsyOp,
+    filter: &Filter,
+    created: &str,
+    likes: u64,
+    retweets: u64,
+    replies: u64,
+    now: &chrono::DateTime<chrono::Utc>,
+) -> ValidationResult {
     if let Some(max_age) = psyop.max_age {
         if let Ok(created_time) = chrono::DateTime::parse_from_rfc3339(created) {
             let age_seconds = (*now - created_time.with_timezone(&chrono::Utc)).num_seconds();
@@ -81,10 +141,17 @@ pub fn valid_for_psyop(psyop: &PsyOp, created: &str, likes: u64, now: &chrono::D
             }
         }
     }
-    if let Some(min_likes) = psyop.min_likes {
-        if likes < min_likes {
-            return ValidationResult { valid: false, reason: Some("min_likes") };
-        }
+    let min_likes = effective_min(psyop.min_likes, filter.min_likes);
+    if likes < min_likes {
+        return ValidationResult { valid: false, reason: Some("min_likes") };
+    }
+    let min_retweets = effective_min(psyop.min_retweets, filter.min_retweets);
+    if retweets < min_retweets {
+        return ValidationResult { valid: false, reason: Some("min_retweets") };
+    }
+    let min_replies = effective_min(psyop.min_replies, filter.min_replies);
+    if replies < min_replies {
+        return ValidationResult { valid: false, reason: Some("min_replies") };
     }
     ValidationResult { valid: true, reason: None }
 }

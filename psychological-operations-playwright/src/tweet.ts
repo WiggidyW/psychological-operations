@@ -9,6 +9,8 @@ export interface TweetData {
   created: string;
   community: string | null;
   likes: number;
+  retweets: number;
+  replies: number;
 }
 
 interface RawTweet {
@@ -20,6 +22,8 @@ interface RawTweet {
   videos: string[];
   community: string | null;
   likes: number;
+  retweets: number;
+  replies: number;
   hasShowMore: boolean;
 }
 
@@ -54,15 +58,25 @@ async function extractRaw(article: Locator): Promise<RawTweet | null> {
 
     const community = q('[data-testid="birdwatch-pivot"]')?.textContent ?? null;
 
-    const likeBtn = q('[data-testid="like"]') ?? q('[data-testid="unlike"]');
-    const label = likeBtn?.getAttribute("aria-label") ?? "";
-    const likesMatch = /(\d+)/.exec(label);
-    const likes = likesMatch ? parseInt(likesMatch[1]!, 10) : 0;
+    const countFromAria = (selectors: string[]): number => {
+      for (const sel of selectors) {
+        const btn = q(sel);
+        if (!btn) continue;
+        const label = btn.getAttribute("aria-label") ?? "";
+        const m = /(\d+)/.exec(label);
+        if (m) return parseInt(m[1]!, 10);
+      }
+      return 0;
+    };
+
+    const likes = countFromAria(['[data-testid="like"]', '[data-testid="unlike"]']);
+    const retweets = countFromAria(['[data-testid="retweet"]', '[data-testid="unretweet"]']);
+    const replies = countFromAria(['[data-testid="reply"]']);
 
     const buttons = qa('[role="button"]');
     const hasShowMore = buttons.some((b) => /show more/i.test(b.textContent ?? ""));
 
-    return { id, handle, text, created, images, videos, community, likes, hasShowMore };
+    return { id, handle, text, created, images, videos, community, likes, retweets, replies, hasShowMore };
   }, undefined, { timeout: 3000 });
 }
 
@@ -113,5 +127,7 @@ export async function parseTweet(article: Locator): Promise<TweetData | null> {
     created: raw.created ?? new Date().toISOString(),
     community: raw.community,
     likes: raw.likes,
+    retweets: raw.retweets,
+    replies: raw.replies,
   };
 }
