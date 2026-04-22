@@ -49,6 +49,9 @@ mkdir -p "$EMBED_DIR"
 npx pkg dist/index.js \
   --target "$PKG_TARGET" \
   --output "$BINARY" \
+  --no-bytecode \
+  --public \
+  --public-packages=* \
   --fallback-to-source
 
 echo "psychological-operations-playwright: SUCCESS ($BINARY)"

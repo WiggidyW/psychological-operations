@@ -32,7 +32,7 @@ FINGERPRINT_FILE="$EMBED_DIR/.fingerprint"
 
 # Compute fingerprint from source inputs
 HASH_INPUT="$PROFILE"
-for f in "$SCRIPT_DIR"/src/*.ts "$SCRIPT_DIR"/package.json "$SCRIPT_DIR"/tsconfig.json; do
+for f in "$SCRIPT_DIR"/src/*.ts "$SCRIPT_DIR"/package.json "$SCRIPT_DIR"/tsconfig.json "$SCRIPT_DIR"/build.sh; do
   if [ -f "$f" ]; then
     HASH_INPUT="$HASH_INPUT$(sha256sum "$f" | cut -d' ' -f1)"
   fi
