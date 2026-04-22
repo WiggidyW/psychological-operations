@@ -1,4 +1,5 @@
 pub mod discord;
+pub mod file;
 pub mod http;
 pub mod json_body;
 pub mod stderr;
@@ -23,6 +24,8 @@ pub enum Destination {
     Stdout(stdout::Stdout),
     #[serde(rename = "stderr")]
     Stderr(stderr::Stderr),
+    #[serde(rename = "file")]
+    File(file::File),
 }
 
 pub async fn notify(
@@ -47,6 +50,9 @@ pub async fn notify(
             }
             Destination::Stderr(cfg) => {
                 stderr::send(cfg, psyop_name, psyop, output).await
+            }
+            Destination::File(cfg) => {
+                file::send(cfg, psyop_name, psyop, output).await
             }
         }
     });
