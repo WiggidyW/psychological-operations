@@ -10,7 +10,15 @@ rl.on("line", async (line) => {
     const cmd = JSON.parse(line) as Record<string, unknown>;
     const result = await handleCommand(cmd);
     process.stdout.write(JSON.stringify(result) + "\n");
+    if (cmd["cmd"] === "close") {
+      rl.close();
+      process.exit(0);
+    }
   } catch (err) {
     process.stdout.write(JSON.stringify({ error: String(err) }) + "\n");
   }
+});
+
+rl.on("close", () => {
+  process.exit(0);
 });
