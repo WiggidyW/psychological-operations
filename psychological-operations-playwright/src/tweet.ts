@@ -11,98 +11,107 @@ export interface TweetData {
   likes: number;
 }
 
-async function getTweetId(article: Locator): Promise<string | null> {
-  const link = article.locator('a[href*="/status/"]').first();
-  const href = await link.getAttribute("href").catch(() => null);
-  if (!href) return null;
-  const match = /\/status\/(\d+)/.exec(href);
-  return match?.[1] ?? null;
+interface RawTweet {
+  id: string | null;
+  handle: string | null;
+  text: string;
+  created: string | null;
+  images: string[];
+  videos: string[];
+  community: string | null;
+  likes: number;
+  hasShowMore: boolean;
 }
 
-async function getHandle(article: Locator): Promise<string | null> {
-  const link = article.locator('a[href^="/"][role="link"] span').filter({ hasText: /^@/ }).first();
-  const text = await link.textContent().catch(() => null);
-  return text?.replace(/^@/, "") ?? null;
+async function extractRaw(article: Locator): Promise<RawTweet | null> {
+  return await article.evaluate((el): RawTweet => {
+    const q = (sel: string) => el.querySelector(sel);
+    const qa = (sel: string) => Array.from(el.querySelectorAll(sel));
+
+    const statusLink = q('a[href*="/status/"]');
+    const href = statusLink?.getAttribute("href") ?? "";
+    const idMatch = /\/status\/(\d+)/.exec(href);
+    const id = idMatch?.[1] ?? null;
+
+    let handle: string | null = null;
+    const handleSpans = el.querySelectorAll('a[role="link"] span');
+    for (const span of Array.from(handleSpans)) {
+      const txt = span.textContent ?? "";
+      if (txt.startsWith("@")) { handle = txt.slice(1); break; }
+    }
+
+    const created = q("time")?.getAttribute("datetime") ?? null;
+
+    const text = q('[data-testid="tweetText"]')?.textContent ?? "";
+
+    const images = qa('[data-testid="tweetPhoto"] img')
+      .map((i) => i.getAttribute("src") ?? "")
+      .filter((s) => s !== "");
+
+    const videos = qa("video")
+      .map((v) => v.getAttribute("src") ?? "")
+      .filter((s) => s !== "");
+
+    const community = q('[data-testid="birdwatch-pivot"]')?.textContent ?? null;
+
+    const likeBtn = q('[data-testid="like"]') ?? q('[data-testid="unlike"]');
+    const label = likeBtn?.getAttribute("aria-label") ?? "";
+    const likesMatch = /(\d+)/.exec(label);
+    const likes = likesMatch ? parseInt(likesMatch[1]!, 10) : 0;
+
+    const buttons = qa('[role="button"]');
+    const hasShowMore = buttons.some((b) => /show more/i.test(b.textContent ?? ""));
+
+    return { id, handle, text, created, images, videos, community, likes, hasShowMore };
+  }, undefined, { timeout: 3000 });
 }
 
-async function getCreated(article: Locator): Promise<string> {
-  const time = article.locator("time").first();
-  return await time.getAttribute("datetime") ?? new Date().toISOString();
-}
-
-async function getText(article: Locator): Promise<string> {
-  const tweetText = article.locator('[data-testid="tweetText"]').first();
-
-  // Expand truncated tweets
+async function expandShowMore(article: Locator): Promise<void> {
   const showMore = article.getByRole("button", { name: /Show more/i }).first();
-  if (await showMore.isVisible().catch(() => false)) {
-    const before = await tweetText.textContent().catch(() => "") ?? "";
-    await showMore.click();
-    await tweetText.evaluate(
-      (el, prev) => new Promise<void>((resolve) => {
-        if (el.textContent !== prev) { resolve(); return; }
-        const obs = new MutationObserver(() => {
-          if (el.textContent !== prev) { obs.disconnect(); resolve(); }
-        });
-        obs.observe(el, { childList: true, subtree: true, characterData: true });
-      }),
-      before,
-    ).catch(() => {});
-  }
-
-  return await tweetText.textContent().catch(() => "") ?? "";
-}
-
-async function getImages(article: Locator): Promise<Array<{ url: string }>> {
-  const imgs = article.locator('[data-testid="tweetPhoto"] img');
-  const count = await imgs.count();
-  const results: Array<{ url: string }> = [];
-  for (let i = 0; i < count; i++) {
-    const src = await imgs.nth(i).getAttribute("src").catch(() => null);
-    if (src) results.push({ url: src });
-  }
-  return results;
-}
-
-async function getVideos(article: Locator): Promise<Array<{ url: string }>> {
-  const vids = article.locator("video");
-  const count = await vids.count();
-  const results: Array<{ url: string }> = [];
-  for (let i = 0; i < count; i++) {
-    const src = await vids.nth(i).getAttribute("src").catch(() => null);
-    if (src) results.push({ url: src });
-  }
-  return results;
-}
-
-async function getLikes(article: Locator): Promise<number> {
-  const btn = article.locator('[data-testid="like"], [data-testid="unlike"]').first();
-  const label = await btn.getAttribute("aria-label").catch(() => null);
-  if (!label) return 0;
-  const match = /(\d+)/.exec(label);
-  return match ? parseInt(match[1]!, 10) : 0;
-}
-
-async function getCommunity(article: Locator): Promise<string | null> {
-  const note = article.locator('[data-testid="birdwatch-pivot"]').first();
-  return await note.textContent().catch(() => null);
+  const tweetText = article.locator('[data-testid="tweetText"]').first();
+  const before = await tweetText.textContent({ timeout: 1000 }).catch(() => "") ?? "";
+  await showMore.click({ timeout: 3000 }).catch(() => {});
+  await tweetText.evaluate(
+    (el, prev) => new Promise<void>((resolve) => {
+      if (el.textContent !== prev) { resolve(); return; }
+      const timer = setTimeout(() => { obs.disconnect(); resolve(); }, 2000);
+      const obs = new MutationObserver(() => {
+        if (el.textContent !== prev) {
+          clearTimeout(timer);
+          obs.disconnect();
+          resolve();
+        }
+      });
+      obs.observe(el, { childList: true, subtree: true, characterData: true });
+    }),
+    before,
+    { timeout: 3000 },
+  ).catch(() => {});
 }
 
 export async function parseTweet(article: Locator): Promise<TweetData | null> {
-  const id = await getTweetId(article);
-  if (!id) return null;
+  const raw = await extractRaw(article).catch(() => null);
+  if (!raw || !raw.id || !raw.handle) return null;
 
-  const handle = await getHandle(article);
-  if (!handle) return null;
+  let text = raw.text;
+  if (raw.hasShowMore) {
+    await expandShowMore(article);
+    const updated = await article.evaluate(
+      (el) => el.querySelector('[data-testid="tweetText"]')?.textContent ?? "",
+      undefined,
+      { timeout: 3000 },
+    ).catch(() => text);
+    text = updated;
+  }
 
-  const [created, text, images, videos, community, likes] = await Promise.all([
-    getCreated(article),
-    getText(article),
-    getImages(article),
-    getVideos(article),
-    getCommunity(article),
-    getLikes(article),
-  ]);
-
-  return { id, handle, text, images, videos, created, community, likes };
+  return {
+    id: raw.id,
+    handle: raw.handle,
+    text,
+    images: raw.images.map((url) => ({ url })),
+    videos: raw.videos.map((url) => ({ url })),
+    created: raw.created ?? new Date().toISOString(),
+    community: raw.community,
+    likes: raw.likes,
+  };
 }
