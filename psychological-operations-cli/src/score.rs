@@ -17,23 +17,53 @@ pub struct ScoredPost {
 
 #[derive(Deserialize)]
 struct ExecutionOutput {
-    output: OutputValue,
-}
-
-#[derive(Deserialize)]
-struct OutputValue {
     output: serde_json::Value,
 }
 
 /// Format a RemotePathCommitOptional for the CLI --path argument.
+/// The CLI expects `key=value,key=value` format, not JSON.
 fn format_remote_ref(path: &RemotePathCommitOptional) -> String {
-    serde_json::to_string(path).unwrap()
+    match path {
+        RemotePathCommitOptional::Github { owner, repository, commit } => {
+            let mut s = format!("remote=github,owner={owner},repository={repository}");
+            if let Some(c) = commit {
+                s.push_str(&format!(",commit={c}"));
+            }
+            s
+        }
+        RemotePathCommitOptional::Filesystem { owner, repository, commit } => {
+            let mut s = format!("remote=filesystem,owner={owner},repository={repository}");
+            if let Some(c) = commit {
+                s.push_str(&format!(",commit={c}"));
+            }
+            s
+        }
+        RemotePathCommitOptional::Mock { name } => {
+            format!("remote=mock,name={name}")
+        }
+    }
+}
+
+/// Locate the objectiveai CLI. Prefer PATH; fall back to the install script's
+/// default location at ~/.objectiveai/objectiveai(.exe) — the Windows installer
+/// only updates the user environment PATH, which isn't reflected in an already-
+/// running shell.
+fn objectiveai_binary() -> std::path::PathBuf {
+    use std::path::PathBuf;
+    let name = if cfg!(windows) { "objectiveai.exe" } else { "objectiveai" };
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        let candidate = PathBuf::from(home).join(".objectiveai").join(name);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    PathBuf::from(name)
 }
 
 /// Fetch a remote function definition via the CLI and deserialize to inline.
 fn fetch_function(path: &RemotePathCommitOptional) -> Result<FullInlineFunction, crate::error::Error> {
     let ref_str = format_remote_ref(path);
-    let output = std::process::Command::new("objectiveai")
+    let output = std::process::Command::new(objectiveai_binary())
         .args(["functions", "get", "--path", &ref_str])
         .stdin(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
@@ -77,7 +107,7 @@ fn run_function_execution(
         args.push("--split".to_string());
     }
 
-    let output = std::process::Command::new("objectiveai")
+    let output = std::process::Command::new(objectiveai_binary())
         .args(&args)
         .stdin(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
@@ -93,10 +123,13 @@ fn run_function_execution(
     // Print stdout passthrough (log lines etc.)
     print!("{stdout}");
 
-    // Last line is the JSON result
-    let last_line = stdout.trim().lines().last()
-        .ok_or_else(|| crate::error::Error::ObjectiveAiCli("no output".into()))?;
-    let result: ExecutionOutput = serde_json::from_str(last_line)?;
+    // Find the last line that parses as our ExecutionOutput JSON.
+    // Earlier lines are CLI status (e.g. "Logs ID: ...").
+    let result = stdout.trim().lines().rev()
+        .find_map(|line| serde_json::from_str::<ExecutionOutput>(line.trim()).ok())
+        .ok_or_else(|| crate::error::Error::ObjectiveAiCli(
+            format!("no JSON result in stdout: {stdout}"),
+        ))?;
     Ok(result)
 }
 
@@ -129,7 +162,7 @@ pub fn score(psyop: &PsyOp, posts: Vec<QueuedPost>) -> Result<Vec<ScoredPost>, c
         let result = run_function_execution(&function, &stage.profile, &input_json, split)?;
 
         // Extract scores
-        let scores: Vec<f64> = result.output.output.as_array()
+        let scores: Vec<f64> = result.output.as_array()
             .ok_or_else(|| crate::error::Error::Stage { stage: i, message: "expected array output".into() })?
             .iter()
             .map(|v| v.as_f64().unwrap_or(0.0))
