@@ -9,6 +9,8 @@ use objectiveai::functions::{
 use objectiveai::functions::executions::request::Strategy;
 use objectiveai::agent::InlineAgentBaseWithFallbacksOrRemoteCommitOptional;
 
+use crate::config::notifications::destinations::Destination;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Stage {
     pub function: FullInlineFunctionOrRemoteCommitOptional,
@@ -27,6 +29,26 @@ pub struct PsyOp {
     pub max_age: Option<u64>,
     pub min_likes: Option<u64>,
     pub stages: Vec<Stage>,
+    #[serde(default)]
+    pub notifications: Vec<Destination>,
+}
+
+/// Read a psyop's JSON definition from disk.
+pub fn load(name: &str) -> Result<PsyOp, crate::error::Error> {
+    let path = crate::config::psyops_dir().join(name).join("psyop.json");
+    if !path.exists() {
+        return Err(crate::error::Error::PsyopNotFound(path.display().to_string()));
+    }
+    let data = std::fs::read_to_string(&path)?;
+    Ok(serde_json::from_str(&data)?)
+}
+
+/// Write a psyop's JSON definition back to disk (pretty-printed).
+pub fn save(name: &str, psyop: &PsyOp) -> Result<(), crate::error::Error> {
+    let path = crate::config::psyops_dir().join(name).join("psyop.json");
+    let json = serde_json::to_string_pretty(psyop)?;
+    std::fs::write(&path, json + "\n")?;
+    Ok(())
 }
 
 impl PsyOp {

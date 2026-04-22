@@ -230,8 +230,10 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
         output.truncate(count as usize);
     }
 
+    let mut destinations = cfg.notifications.clone();
+    destinations.extend(psyop.notifications.iter().cloned());
     config::notifications::destinations::notify(
-        &cfg.notifications,
+        &destinations,
         name,
         &psyop,
         &output,
