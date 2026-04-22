@@ -32,18 +32,25 @@ async function ensureContext(): Promise<BrowserContext> {
       "--disable-blink-features=AutomationControlled",
     ],
   });
+  // pkg's esbuild wraps our functions with __name(fn, "name") helpers. When
+  // Playwright serializes a function via .toString() to run it in the page,
+  // that wrapping comes along, and __name isn't defined on the page. Shim it
+  // as an identity function so the wrapped code executes normally.
+  await context.addInitScript("globalThis.__name = globalThis.__name || function (fn) { return fn; };");
   return context;
 }
 
 async function validatePage(page: Page): Promise<"results" | "empty" | "unexpected"> {
-  const result = await Promise.race([
-    page.locator("article").first().waitFor({ timeout: 0 }).then(() => "results" as const),
-    page.waitForLoadState("networkidle").then(() => "settled" as const),
-  ]);
-  if (result === "results") return "results";
-  const noResults = await page.getByText(/No results for/).first().isVisible().catch(() => false);
-  if (noResults) return "empty";
-  return "unexpected";
+  // Wait up to 15s for an article to appear. X has persistent connections, so
+  // networkidle never fires — we can't rely on it as a fallback.
+  try {
+    await page.locator("article").first().waitFor({ timeout: 15_000 });
+    return "results";
+  } catch {
+    const noResults = await page.getByText(/No results for/).first().isVisible().catch(() => false);
+    if (noResults) return "empty";
+    return "unexpected";
+  }
 }
 
 async function refillBuffer(tab: QueryTab): Promise<void> {
