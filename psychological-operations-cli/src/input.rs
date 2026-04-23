@@ -87,16 +87,28 @@ pub fn vector_input_schema() -> VectorFunctionInputSchema {
     }
 }
 
-pub fn new_post_input_value(post: &QueuedPost) -> PostInputValue {
+pub fn new_post_input_value(
+    post: &QueuedPost,
+    include_images: bool,
+    include_videos: bool,
+) -> PostInputValue {
     PostInputValue {
         text: post.text.clone(),
-        images: post.images.iter().map(|img| ImagePart {
-            r#type: "image_url",
-            image_url: MediaUrl { url: img.url.clone() },
-        }).collect(),
-        videos: post.videos.iter().map(|vid| VideoPart {
-            r#type: "video_url",
-            video_url: MediaUrl { url: vid.url.clone() },
-        }).collect(),
+        images: if include_images {
+            post.images.iter().map(|img| ImagePart {
+                r#type: "image_url",
+                image_url: MediaUrl { url: img.url.clone() },
+            }).collect()
+        } else {
+            Vec::new()
+        },
+        videos: if include_videos {
+            post.videos.iter().map(|vid| VideoPart {
+                r#type: "video_url",
+                video_url: MediaUrl { url: vid.url.clone() },
+            }).collect()
+        } else {
+            Vec::new()
+        },
     }
 }

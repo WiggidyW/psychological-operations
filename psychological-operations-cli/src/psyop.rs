@@ -53,10 +53,20 @@ pub struct PsyOp {
     pub min_likes: Option<u64>,
     pub min_retweets: Option<u64>,
     pub min_replies: Option<u64>,
+    /// If `false`, scored posts are sent to the function with an empty
+    /// `images` array regardless of what was scraped. Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub images: bool,
+    /// If `false`, scored posts are sent to the function with an empty
+    /// `videos` array regardless of what was scraped. Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub videos: bool,
     pub stages: Vec<Stage>,
     #[serde(default)]
     pub notifications: Vec<Destination>,
 }
+
+fn default_true() -> bool { true }
 
 /// Read a psyop's JSON definition from disk.
 pub fn load(name: &str) -> Result<PsyOp, crate::error::Error> {

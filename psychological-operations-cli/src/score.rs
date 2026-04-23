@@ -151,7 +151,7 @@ pub fn score(psyop: &PsyOp, posts: Vec<QueuedPost>) -> Result<Vec<ScoredPost>, c
 
         // Build input and execute
         let items: Vec<PostInputValue> = current.iter()
-            .map(|s| new_post_input_value(&s.post))
+            .map(|s| new_post_input_value(&s.post, psyop.images, psyop.videos))
             .collect();
 
         let (input_json, split) = if is_vector {
