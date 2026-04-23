@@ -20,15 +20,11 @@ pub struct Stage {
     pub threshold: Option<f64>,
 }
 
-/// A single search filter. At least one of `query` or `community` must be set
-/// (validated at PsyOp::validate). Per-filter min_* values combine with the
-/// PsyOp's root-level min_* values by taking the greater of the two.
+/// A single search filter. Per-filter min_* values combine with the PsyOp's
+/// root-level min_* values by taking the greater of the two.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Filter {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub query: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub community: Option<String>,
+    pub query: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_likes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -38,19 +34,10 @@ pub struct Filter {
 }
 
 impl Filter {
-    /// Build the X.com search URL this filter targets. `community` switches the
-    /// URL path entirely; `query` populates the `q=` parameter on either path.
+    /// Build the X.com search URL this filter targets.
     pub fn url(&self) -> String {
-        let q = self.query.as_deref().unwrap_or("");
-        let q_enc = urlencoding::encode(q);
-        match &self.community {
-            Some(community_id) => format!(
-                "https://x.com/i/communities/{community_id}/search?q={q_enc}&f=live",
-            ),
-            None => format!(
-                "https://x.com/search?q={q_enc}&src=typed_query&f=live",
-            ),
-        }
+        let q_enc = urlencoding::encode(&self.query);
+        format!("https://x.com/search?q={q_enc}&src=typed_query&f=live")
     }
 }
 
@@ -94,13 +81,6 @@ impl PsyOp {
         }
         if self.filters.is_empty() {
             return Err(crate::error::Error::InvalidPsyop("filters must not be empty".into()));
-        }
-        for (i, f) in self.filters.iter().enumerate() {
-            if f.query.is_none() && f.community.is_none() {
-                return Err(crate::error::Error::InvalidPsyop(
-                    format!("filter[{i}] must set at least one of `query` or `community`"),
-                ));
-            }
         }
         let first = &self.stages[0];
         if first.count.is_none() {
