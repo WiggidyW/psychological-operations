@@ -205,7 +205,7 @@ impl Commands {
 
 /// Fetch a remote invention state via the CLI.
 fn fetch_state(ref_str: &str) -> Result<ParamsState, crate::error::Error> {
-    let output = std::process::Command::new("objectiveai")
+    let output = std::process::Command::new(crate::score::objectiveai_binary())
         .args(["functions", "inventions", "state", "get", "--path", ref_str])
         .stderr(std::process::Stdio::inherit())
         .output()?;
@@ -280,7 +280,7 @@ fn run_invention(
 
     fwd.append_to(&mut args);
 
-    let status = std::process::Command::new("objectiveai")
+    let status = std::process::Command::new(crate::score::objectiveai_binary())
         .args(&args)
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
