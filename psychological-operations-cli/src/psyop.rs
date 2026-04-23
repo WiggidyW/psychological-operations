@@ -18,6 +18,8 @@ pub struct Stage {
     pub strategy: Strategy,
     pub count: Option<u64>,
     pub threshold: Option<f64>,
+    #[serde(default)]
+    pub invert: bool,
 }
 
 /// A single search filter. Per-filter min_* values combine with the PsyOp's

@@ -48,7 +48,7 @@ fn format_remote_ref(path: &RemotePathCommitOptional) -> String {
 /// default location at ~/.objectiveai/objectiveai(.exe) — the Windows installer
 /// only updates the user environment PATH, which isn't reflected in an already-
 /// running shell.
-fn objectiveai_binary() -> std::path::PathBuf {
+pub fn objectiveai_binary() -> std::path::PathBuf {
     use std::path::PathBuf;
     let name = if cfg!(windows) { "objectiveai.exe" } else { "objectiveai" };
     if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
@@ -92,6 +92,7 @@ fn run_function_execution(
     profile: &InlineProfileOrRemoteCommitOptional,
     input_json: &str,
     split: bool,
+    invert: bool,
 ) -> Result<ExecutionOutput, crate::error::Error> {
     let function_json = serde_json::to_string(function)?;
     let profile_json = serde_json::to_string(profile)?;
@@ -105,6 +106,9 @@ fn run_function_execution(
 
     if split {
         args.push("--split".to_string());
+    }
+    if invert {
+        args.push("--invert".to_string());
     }
 
     let output = std::process::Command::new(objectiveai_binary())
@@ -159,7 +163,7 @@ pub fn score(psyop: &PsyOp, posts: Vec<QueuedPost>) -> Result<Vec<ScoredPost>, c
             (serde_json::to_string(&items)?, true)
         };
 
-        let result = run_function_execution(&function, &stage.profile, &input_json, split)?;
+        let result = run_function_execution(&function, &stage.profile, &input_json, split, stage.invert)?;
 
         // Extract scores
         let scores: Vec<f64> = result.output.as_array()
