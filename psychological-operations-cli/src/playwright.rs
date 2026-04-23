@@ -12,7 +12,6 @@ pub struct TweetData {
     pub images: Vec<MediaUrl>,
     pub videos: Vec<MediaUrl>,
     pub created: String,
-    pub community: Option<String>,
     pub likes: u64,
     #[serde(default)]
     pub retweets: u64,

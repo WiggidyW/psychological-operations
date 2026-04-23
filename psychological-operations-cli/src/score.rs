@@ -6,12 +6,14 @@ use objectiveai::functions::{
 use objectiveai::RemotePathCommitOptional;
 use serde::Deserialize;
 
-use crate::db::QueuedPost;
+use crate::db::{Post, UnscoredEntry};
 use crate::input::{new_post_input_value, PostsInputValue, PostInputValue};
 use crate::psyop::{PsyOp, Stage, is_vector_function};
 
 pub struct ScoredPost {
-    pub post: QueuedPost,
+    pub post: Post,
+    /// The filter URL that originally found this post.
+    pub query: String,
     pub score: f64,
 }
 
@@ -137,9 +139,9 @@ fn run_function_execution(
     Ok(result)
 }
 
-pub fn score(psyop: &PsyOp, posts: Vec<QueuedPost>) -> Result<Vec<ScoredPost>, crate::error::Error> {
-    let mut current: Vec<ScoredPost> = posts.into_iter()
-        .map(|post| ScoredPost { post, score: 0.0 })
+pub fn score(psyop: &PsyOp, entries: Vec<UnscoredEntry>) -> Result<Vec<ScoredPost>, crate::error::Error> {
+    let mut current: Vec<ScoredPost> = entries.into_iter()
+        .map(|e| ScoredPost { post: e.post, query: e.query, score: 0.0 })
         .collect();
 
     for (i, stage) in psyop.stages.iter().enumerate() {

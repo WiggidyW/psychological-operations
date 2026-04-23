@@ -141,7 +141,7 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
 
     let db = crate::db::Db::open()?;
 
-    let already_queued = db.count_queued(name)?;
+    let already_queued = db.count_unscored(name)?;
     let shortfall = target_count.saturating_sub(already_queued);
 
     if shortfall > 0 {
@@ -182,26 +182,22 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
                 continue;
             }
 
-            let post = crate::db::QueuedPost {
+            let post = crate::db::Post {
                 id: tweet.id,
-                scrape_id: name.to_string(),
-                query: url.clone(),
                 handle: tweet.handle,
                 text: tweet.text,
                 images: tweet.images,
                 videos: tweet.videos,
                 created: tweet.created,
-                community: tweet.community,
                 likes: tweet.likes,
                 retweets: tweet.retweets,
                 replies: tweet.replies,
-                psyop: name.to_string(),
-                psyop_commit_sha: commit_sha.clone(),
             };
 
-            let inserted = db.insert_post(&post)?;
+            let inserted = db.insert_post(&post, name, &commit_sha, &url)?;
             if !inserted {
-                if db.has_existing_post(&post.id, &url, name, &commit_sha)? {
+                let prior_query = db.existing_post_query(&post.id, name, &commit_sha)?;
+                if prior_query.as_deref() == Some(url.as_str()) {
                     pw.close_query(&url)?;
                 }
                 continue;
@@ -213,13 +209,13 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
         pw.close()?;
     }
 
-    let posts = db.get_oldest_queued(name, target_count)?;
+    let entries = db.get_oldest_unscored(name, target_count)?;
     let mut scored_posts: Vec<crate::score::ScoredPost> = Vec::new();
-    if !posts.is_empty() {
-        scored_posts = crate::score::score(&psyop, posts)?;
+    if !entries.is_empty() {
+        scored_posts = crate::score::score(&psyop, entries)?;
         let ids: Vec<String> = scored_posts.iter().map(|s| s.post.id.clone()).collect();
         let scores: Vec<f64> = scored_posts.iter().map(|s| s.score).collect();
-        db.finish_posts(&ids, &scores)?;
+        db.set_scores(name, &commit_sha, &ids, &scores)?;
     }
 
     // Apply top-level psyop threshold + count to produce the final output set.

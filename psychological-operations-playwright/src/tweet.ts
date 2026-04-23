@@ -7,7 +7,6 @@ export interface TweetData {
   images: Array<{ url: string }>;
   videos: Array<{ url: string }>;
   created: string;
-  community: string | null;
   likes: number;
   retweets: number;
   replies: number;
@@ -20,7 +19,6 @@ interface RawTweet {
   created: string | null;
   images: string[];
   videos: string[];
-  community: string | null;
   likes: number;
   retweets: number;
   replies: number;
@@ -56,8 +54,6 @@ async function extractRaw(article: Locator): Promise<RawTweet | null> {
       .map((v) => v.getAttribute("src") ?? "")
       .filter((s) => s !== "");
 
-    const community = q('[data-testid="birdwatch-pivot"]')?.textContent ?? null;
-
     const countFromAria = (selectors: string[]): number => {
       for (const sel of selectors) {
         const btn = q(sel);
@@ -76,7 +72,7 @@ async function extractRaw(article: Locator): Promise<RawTweet | null> {
     const buttons = qa('[role="button"]');
     const hasShowMore = buttons.some((b) => /show more/i.test(b.textContent ?? ""));
 
-    return { id, handle, text, created, images, videos, community, likes, retweets, replies, hasShowMore };
+    return { id, handle, text, created, images, videos, likes, retweets, replies, hasShowMore };
   }, undefined, { timeout: 3000 });
 }
 
@@ -125,7 +121,6 @@ export async function parseTweet(article: Locator): Promise<TweetData | null> {
     images: raw.images.map((url) => ({ url })),
     videos: raw.videos.map((url) => ({ url })),
     created: raw.created ?? new Date().toISOString(),
-    community: raw.community,
     likes: raw.likes,
     retweets: raw.retweets,
     replies: raw.replies,

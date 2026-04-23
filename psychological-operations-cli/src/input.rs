@@ -8,7 +8,7 @@ use objectiveai::functions::expression::{
     VideoInputSchema, VideoInputSchemaType,
 };
 use objectiveai::functions::alpha_vector::expression::VectorFunctionInputSchema;
-use crate::db::{QueuedPost, MediaUrl};
+use crate::db::{Post, MediaUrl};
 
 #[derive(Debug, Serialize)]
 pub struct PostInputValue {
@@ -88,7 +88,7 @@ pub fn vector_input_schema() -> VectorFunctionInputSchema {
 }
 
 pub fn new_post_input_value(
-    post: &QueuedPost,
+    post: &Post,
     include_images: bool,
     include_videos: bool,
 ) -> PostInputValue {

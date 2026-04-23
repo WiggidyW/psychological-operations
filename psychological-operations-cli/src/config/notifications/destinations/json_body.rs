@@ -22,7 +22,6 @@ pub struct Result_<'a> {
     pub images: &'a [MediaUrl],
     pub videos: &'a [MediaUrl],
     pub created: &'a str,
-    pub community: Option<&'a str>,
     pub query: &'a str,
     pub url: String,
 }
@@ -38,8 +37,7 @@ pub fn build<'a>(psyop_name: &'a str, output: &'a [&'a ScoredPost]) -> Body<'a> 
             images: &s.post.images,
             videos: &s.post.videos,
             created: &s.post.created,
-            community: s.post.community.as_deref(),
-            query: &s.post.query,
+            query: &s.query,
             url: format!("https://x.com/{}/status/{}", s.post.handle, s.post.id),
         }).collect(),
     }
