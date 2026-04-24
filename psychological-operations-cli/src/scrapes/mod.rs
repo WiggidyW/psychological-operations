@@ -9,10 +9,9 @@ use crate::scrape::Scrape;
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// List all scrapes on disk (every dir under `scrapes/` that has both
-    /// `scrape.json` and `.git`). Each entry includes its `enabled` state
-    /// and current commit. `--enabled` and `--disabled` are mutually
-    /// exclusive filters.
+    /// List all scrapes on disk. `enabled` reflects the resolved state at
+    /// each scrape's current commit. `--enabled` and `--disabled` are
+    /// mutually exclusive filters.
     List {
         #[arg(long, conflicts_with = "disabled")]
         enabled: bool,
@@ -23,13 +22,19 @@ pub enum Commands {
     Get {
         name: String,
     },
-    /// Mark a scrape as enabled (clear the disabled flag).
+    /// Mark a scrape as enabled. With `--commit <sha>` only affects that
+    /// commit; otherwise updates the base flag.
     Enable {
         name: String,
+        #[arg(long)]
+        commit: Option<String>,
     },
-    /// Mark a scrape as disabled.
+    /// Mark a scrape as disabled. With `--commit <sha>` only affects that
+    /// commit; otherwise updates the base flag.
     Disable {
         name: String,
+        #[arg(long)]
+        commit: Option<String>,
     },
     /// Publish a scrape definition (writes scrape.json + commits in its repo).
     Publish {
@@ -88,8 +93,8 @@ impl Commands {
         match self {
             Commands::List { enabled, disabled } => list(enabled, disabled),
             Commands::Get { name } => get(&name),
-            Commands::Enable { name } => enable(&name),
-            Commands::Disable { name } => disable(&name),
+            Commands::Enable { name, commit } => set_disabled(&name, commit.as_deref(), false),
+            Commands::Disable { name, commit } => set_disabled(&name, commit.as_deref(), true),
             Commands::Publish { args } => publish(args),
             Commands::Notifications { command } => command.handle(),
             Commands::AgentTimeout { command } => command.handle(),
@@ -113,14 +118,16 @@ fn list(enabled: bool, disabled: bool) -> Result<crate::Output, crate::error::Er
                 continue;
             }
             let Some(name) = ent.file_name().to_str().map(|s| s.to_string()) else { continue };
-            let is_enabled = !cfg.scrapes.get(&name).map(|s| s.disabled).unwrap_or(false);
-            if enabled && !is_enabled { continue; }
-            if disabled && is_enabled { continue; }
             let commit_sha = (|| -> Result<String, git2::Error> {
                 let repo = git2::Repository::open(&path)?;
                 let head = repo.head()?.peel_to_commit()?;
                 Ok(head.id().to_string())
             })().unwrap_or_default();
+            let is_enabled = !cfg.scrapes.get(&name)
+                .map(|o| o.disabled_for(&commit_sha))
+                .unwrap_or(false);
+            if enabled && !is_enabled { continue; }
+            if disabled && is_enabled { continue; }
             entries.push(ScrapeEntry { name, enabled: is_enabled, commit_sha });
         }
     }
@@ -133,21 +140,25 @@ fn get(name: &str) -> Result<crate::Output, crate::error::Error> {
     Ok(crate::Output::ConfigGet(serde_json::to_string(&scrape)?))
 }
 
-fn enable(name: &str) -> Result<crate::Output, crate::error::Error> {
+fn set_disabled(name: &str, commit: Option<&str>, value: bool) -> Result<crate::Output, crate::error::Error> {
     let mut cfg = crate::config::load();
-    if let Some(entry) = cfg.scrapes.get_mut(name) {
-        entry.disabled = false;
-        if entry.is_empty() {
-            cfg.scrapes.remove(name);
+    {
+        let overrides = cfg.scrapes.entry(name.to_string()).or_default();
+        match commit {
+            Some(sha) => {
+                overrides.commits.entry(sha.to_string()).or_default().disabled = Some(value);
+                if overrides.commits.get(sha).is_some_and(|c| c.is_empty()) {
+                    overrides.commits.remove(sha);
+                }
+            }
+            None => {
+                overrides.base.disabled = Some(value);
+            }
         }
     }
-    crate::config::save(&cfg)?;
-    Ok(crate::Output::ConfigSet)
-}
-
-fn disable(name: &str) -> Result<crate::Output, crate::error::Error> {
-    let mut cfg = crate::config::load();
-    cfg.scrapes.entry(name.to_string()).or_default().disabled = true;
+    if cfg.scrapes.get(name).is_some_and(|o| o.is_empty()) {
+        cfg.scrapes.remove(name);
+    }
     crate::config::save(&cfg)?;
     Ok(crate::Output::ConfigSet)
 }

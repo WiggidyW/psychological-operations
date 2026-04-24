@@ -116,7 +116,7 @@ pub async fn run_psyop(name: &str) -> Result<(), error::Error> {
 
     let mut destinations = cfg.notifications.clone();
     if let Some(per_psyop) = cfg.psyops.get(name) {
-        destinations.extend(per_psyop.notifications.iter().cloned());
+        destinations.extend(per_psyop.notifications_for(&commit_sha).iter().cloned());
     }
     crate::notifications::destinations::notify(
         &destinations,
