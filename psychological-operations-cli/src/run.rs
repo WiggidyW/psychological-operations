@@ -148,8 +148,8 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
     let output: Vec<&crate::score::ScoredPost> = scored_posts.iter().collect();
 
     let mut destinations = cfg.notifications.clone();
-    if let Some(per_psyop) = cfg.psyop_notifications.get(name) {
-        destinations.extend(per_psyop.iter().cloned());
+    if let Some(per_psyop) = cfg.psyops.get(name) {
+        destinations.extend(per_psyop.notifications.iter().cloned());
     }
     config::notifications::destinations::notify(
         &destinations,

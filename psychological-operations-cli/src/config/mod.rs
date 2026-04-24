@@ -1,6 +1,7 @@
 pub mod agent_timeout;
 pub mod agent_max_attempts;
 pub mod notifications;
+pub mod psyops;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -31,6 +32,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: notifications::Commands,
     },
+    /// Manage psyops (enable/disable/list)
+    Psyops {
+        #[command(subcommand)]
+        command: psyops::Commands,
+    },
 }
 
 impl Commands {
@@ -39,6 +45,7 @@ impl Commands {
             Commands::AgentTimeout { command } => command.handle(),
             Commands::AgentMaxAttempts { command } => command.handle(),
             Commands::Notifications { command } => command.handle(),
+            Commands::Psyops { command } => command.handle(),
         }
     }
 }
@@ -69,6 +76,20 @@ pub fn db_path() -> PathBuf {
     base_dir().join("data.db")
 }
 
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub struct PsyopConfig {
+    /// Per-psyop notification destinations. Stored here rather than inside
+    /// `psyop.json` so shared psyop definitions don't have to carry
+    /// user-specific webhook URLs / tokens / auth headers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notifications: Vec<Destination>,
+    /// When `true`, automatic execution skips this psyop.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub disabled: bool,
+}
+
+fn is_false(b: &bool) -> bool { !*b }
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_agent_timeout")]
@@ -78,12 +99,10 @@ pub struct Config {
     /// Global notification destinations — fire on every psyop run.
     #[serde(default)]
     pub notifications: Vec<Destination>,
-    /// Per-psyop notification destinations, keyed by psyop name. Stored
-    /// here rather than inside `psyop.json` so shared psyop definitions
-    /// don't have to carry user-specific webhook URLs / tokens / auth
-    /// headers. Looked up at run time by name.
+    /// Per-psyop overrides keyed by psyop name. Holds notification
+    /// destinations and the enable/disable flag.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub psyop_notifications: BTreeMap<String, Vec<Destination>>,
+    pub psyops: BTreeMap<String, PsyopConfig>,
 }
 
 fn default_agent_timeout() -> u64 { 180 }
@@ -95,7 +114,7 @@ impl Default for Config {
             agent_timeout: default_agent_timeout(),
             agent_max_attempts: default_agent_max_attempts(),
             notifications: Vec::new(),
-            psyop_notifications: BTreeMap::new(),
+            psyops: BTreeMap::new(),
         }
     }
 }

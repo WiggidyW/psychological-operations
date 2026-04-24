@@ -68,7 +68,7 @@ impl Commands {
 fn read_notifications(psyop: Option<&str>) -> Result<Vec<Destination>, crate::error::Error> {
     let cfg = crate::config::load();
     match psyop {
-        Some(name) => Ok(cfg.psyop_notifications.get(name).cloned().unwrap_or_default()),
+        Some(name) => Ok(cfg.psyops.get(name).map(|p| p.notifications.clone()).unwrap_or_default()),
         None => Ok(cfg.notifications),
     }
 }
@@ -80,11 +80,11 @@ where
     let mut cfg = crate::config::load();
     match psyop {
         Some(name) => {
-            let entry = cfg.psyop_notifications.entry(name.to_string()).or_default();
-            f(entry)?;
-            // Drop the key entirely once it's empty so the file stays tidy.
-            if entry.is_empty() {
-                cfg.psyop_notifications.remove(name);
+            let entry = cfg.psyops.entry(name.to_string()).or_default();
+            f(&mut entry.notifications)?;
+            // Drop the key entirely once it's fully default so the file stays tidy.
+            if entry.notifications.is_empty() && !entry.disabled {
+                cfg.psyops.remove(name);
             }
         }
         None => {
