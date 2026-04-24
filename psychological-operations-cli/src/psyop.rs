@@ -27,6 +27,15 @@ pub struct Source {
     /// Useful for letting engagement settle before scoring.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_age: Option<u64>,
+    /// Cap on how many posts to draw from this source. `None` means take
+    /// every eligible post under this tag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
+    /// Only consider posts that have a previously-stored score under any
+    /// psyop ≥ this threshold. Useful for cascading psyops where one
+    /// psyop's output filters another's input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_score: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,10 +44,6 @@ pub struct PsyOp {
     pub function: FullInlineFunctionOrRemoteCommitOptional,
     pub profile: InlineProfileOrRemoteCommitOptional,
     pub strategy: Strategy,
-    /// Optional cap on how many tagged posts to feed into the function.
-    /// `None` means score every eligible post.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub count: Option<u64>,
     #[serde(default)]
     pub invert: bool,
     /// If `false`, scored posts are sent to the function with an empty
