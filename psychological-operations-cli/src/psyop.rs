@@ -9,8 +9,6 @@ use objectiveai::functions::{
 use objectiveai::functions::executions::request::Strategy;
 use objectiveai::agent::InlineAgentBaseWithFallbacksOrRemoteCommitOptional;
 
-use crate::config::notifications::destinations::Destination;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Stage {
     pub function: FullInlineFunctionOrRemoteCommitOptional,
@@ -56,8 +54,6 @@ pub struct PsyOp {
     #[serde(default = "default_true")]
     pub videos: bool,
     pub stages: Vec<Stage>,
-    #[serde(default)]
-    pub notifications: Vec<Destination>,
 }
 
 fn default_true() -> bool { true }

@@ -236,7 +236,9 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
     }
 
     let mut destinations = cfg.notifications.clone();
-    destinations.extend(psyop.notifications.iter().cloned());
+    if let Some(per_psyop) = cfg.psyop_notifications.get(name) {
+        destinations.extend(per_psyop.iter().cloned());
+    }
     config::notifications::destinations::notify(
         &destinations,
         name,

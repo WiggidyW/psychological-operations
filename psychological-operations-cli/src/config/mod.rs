@@ -2,9 +2,11 @@ pub mod agent_timeout;
 pub mod agent_max_attempts;
 pub mod notifications;
 
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
 use clap::Subcommand;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 use notifications::destinations::Destination;
 
@@ -73,8 +75,15 @@ pub struct Config {
     pub agent_timeout: u64,
     #[serde(default = "default_agent_max_attempts")]
     pub agent_max_attempts: u64,
+    /// Global notification destinations — fire on every psyop run.
     #[serde(default)]
     pub notifications: Vec<Destination>,
+    /// Per-psyop notification destinations, keyed by psyop name. Stored
+    /// here rather than inside `psyop.json` so shared psyop definitions
+    /// don't have to carry user-specific webhook URLs / tokens / auth
+    /// headers. Looked up at run time by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub psyop_notifications: BTreeMap<String, Vec<Destination>>,
 }
 
 fn default_agent_timeout() -> u64 { 180 }
@@ -86,6 +95,7 @@ impl Default for Config {
             agent_timeout: default_agent_timeout(),
             agent_max_attempts: default_agent_max_attempts(),
             notifications: Vec::new(),
+            psyop_notifications: BTreeMap::new(),
         }
     }
 }
