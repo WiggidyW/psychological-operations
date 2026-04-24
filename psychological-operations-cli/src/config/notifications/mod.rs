@@ -1,39 +1,49 @@
 pub mod destinations;
 
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 
 use destinations::Destination;
+
+/// Mutually exclusive `--psyop` / `--scrape` selectors that pick which
+/// per-name notification list to operate on. Both unset = the global list.
+#[derive(Args, Clone)]
+#[group(multiple = false)]
+pub struct Target {
+    /// Target a specific psyop's notifications instead of the global list
+    #[arg(long)]
+    psyop: Option<String>,
+    /// Target a specific scrape's notifications instead of the global list
+    #[arg(long)]
+    scrape: Option<String>,
+}
 
 #[derive(Subcommand)]
 pub enum Commands {
     /// Get all notifications or one by index
     Get {
         index: Option<usize>,
-        /// Target a specific psyop's notifications instead of the global list
-        #[arg(long)]
-        psyop: Option<String>,
+        #[command(flatten)]
+        target: Target,
     },
     /// Add a notification target (JSON string)
     Add {
         json: String,
-        /// Target a specific psyop's notifications instead of the global list
-        #[arg(long)]
-        psyop: Option<String>,
+        #[command(flatten)]
+        target: Target,
     },
     /// Remove a notification target by index
     Del {
         index: usize,
-        /// Target a specific psyop's notifications instead of the global list
-        #[arg(long)]
-        psyop: Option<String>,
+        #[command(flatten)]
+        target: Target,
     },
 }
 
 impl Commands {
     pub fn handle(self) -> Result<crate::Output, crate::error::Error> {
         match self {
-            Commands::Get { index, psyop } => {
-                let list = read_notifications(psyop.as_deref())?;
+            Commands::Get { index, target } => {
+                let list = read_notifications(&target)?;
                 match index {
                     Some(i) => {
                         let entry = list.get(i)
@@ -43,16 +53,16 @@ impl Commands {
                     None => Ok(crate::Output::ConfigGet(serde_json::to_string(&list)?)),
                 }
             }
-            Commands::Add { json, psyop } => {
+            Commands::Add { json, target } => {
                 let parsed: Destination = serde_json::from_str(&json)?;
-                mutate_notifications(psyop.as_deref(), |list| {
+                mutate_notifications(&target, |list| {
                     list.push(parsed);
                     Ok(())
                 })?;
                 Ok(crate::Output::ConfigSet)
             }
-            Commands::Del { index, psyop } => {
-                mutate_notifications(psyop.as_deref(), |list| {
+            Commands::Del { index, target } => {
+                mutate_notifications(&target, |list| {
                     if index >= list.len() {
                         return Err(crate::error::Error::Other(format!("no notification at index {index}")));
                     }
@@ -65,31 +75,36 @@ impl Commands {
     }
 }
 
-fn read_notifications(psyop: Option<&str>) -> Result<Vec<Destination>, crate::error::Error> {
+fn read_notifications(target: &Target) -> Result<Vec<Destination>, crate::error::Error> {
     let cfg = crate::config::load();
-    match psyop {
-        Some(name) => Ok(cfg.psyops.get(name).map(|p| p.notifications.clone()).unwrap_or_default()),
-        None => Ok(cfg.notifications),
+    if let Some(name) = &target.psyop {
+        return Ok(cfg.psyops.get(name).map(|p| p.notifications.clone()).unwrap_or_default());
     }
+    if let Some(name) = &target.scrape {
+        return Ok(cfg.scrapes.get(name).map(|s| s.notifications.clone()).unwrap_or_default());
+    }
+    Ok(cfg.notifications)
 }
 
-fn mutate_notifications<F>(psyop: Option<&str>, f: F) -> Result<(), crate::error::Error>
+fn mutate_notifications<F>(target: &Target, f: F) -> Result<(), crate::error::Error>
 where
     F: FnOnce(&mut Vec<Destination>) -> Result<(), crate::error::Error>,
 {
     let mut cfg = crate::config::load();
-    match psyop {
-        Some(name) => {
-            let entry = cfg.psyops.entry(name.to_string()).or_default();
-            f(&mut entry.notifications)?;
-            // Drop the key entirely once it's fully default so the file stays tidy.
-            if entry.notifications.is_empty() && !entry.disabled {
-                cfg.psyops.remove(name);
-            }
+    if let Some(name) = &target.psyop {
+        let entry = cfg.psyops.entry(name.clone()).or_default();
+        f(&mut entry.notifications)?;
+        if entry.notifications.is_empty() && !entry.disabled {
+            cfg.psyops.remove(name);
         }
-        None => {
-            f(&mut cfg.notifications)?;
+    } else if let Some(name) = &target.scrape {
+        let entry = cfg.scrapes.entry(name.clone()).or_default();
+        f(&mut entry.notifications)?;
+        if entry.notifications.is_empty() && !entry.disabled {
+            cfg.scrapes.remove(name);
         }
+    } else {
+        f(&mut cfg.notifications)?;
     }
     crate::config::save(&cfg)?;
     Ok(())

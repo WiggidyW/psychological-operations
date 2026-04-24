@@ -2,6 +2,7 @@ pub mod agent_timeout;
 pub mod agent_max_attempts;
 pub mod notifications;
 pub mod psyops;
+pub mod scrapes;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -37,6 +38,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: psyops::Commands,
     },
+    /// Manage scrapes (enable/disable/list)
+    Scrapes {
+        #[command(subcommand)]
+        command: scrapes::Commands,
+    },
 }
 
 impl Commands {
@@ -46,6 +52,7 @@ impl Commands {
             Commands::AgentMaxAttempts { command } => command.handle(),
             Commands::Notifications { command } => command.handle(),
             Commands::Psyops { command } => command.handle(),
+            Commands::Scrapes { command } => command.handle(),
         }
     }
 }
@@ -88,6 +95,16 @@ pub struct PsyopConfig {
     pub disabled: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub struct ScrapeConfig {
+    /// Per-scrape notification destinations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notifications: Vec<Destination>,
+    /// When `true`, automatic execution skips this scrape.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub disabled: bool,
+}
+
 fn is_false(b: &bool) -> bool { !*b }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -103,6 +120,9 @@ pub struct Config {
     /// destinations and the enable/disable flag.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub psyops: BTreeMap<String, PsyopConfig>,
+    /// Per-scrape overrides keyed by scrape name. Same shape as `psyops`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub scrapes: BTreeMap<String, ScrapeConfig>,
 }
 
 fn default_agent_timeout() -> u64 { 180 }
@@ -115,6 +135,7 @@ impl Default for Config {
             agent_max_attempts: default_agent_max_attempts(),
             notifications: Vec::new(),
             psyops: BTreeMap::new(),
+            scrapes: BTreeMap::new(),
         }
     }
 }
