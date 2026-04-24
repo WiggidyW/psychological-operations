@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use objectiveai::agent::InlineAgentBaseWithFallbacksOrRemoteCommitOptional;
+
 /// One search filter for a Scrape. The query maps to an X.com `/search?q=…`
 /// URL; per-filter min_* values combine with the Scrape's root-level min_*
 /// values by taking the greater of the two when validating each tweet at
@@ -28,6 +30,9 @@ impl Filter {
 /// every tweet stored by this run. Psyops then operate on these tags.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Scrape {
+    /// Agent used for intervention when scraping fails (e.g. login wall,
+    /// unexpected page state).
+    pub agent: InlineAgentBaseWithFallbacksOrRemoteCommitOptional,
     pub filters: Vec<Filter>,
     /// Tags applied to every tweet stored by this scrape run. Must contain
     /// at least one tag.

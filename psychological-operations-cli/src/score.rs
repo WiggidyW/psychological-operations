@@ -8,8 +8,9 @@ use serde::Deserialize;
 
 use crate::db::{Post, UnscoredEntry};
 use crate::input::{new_post_input_value, PostsInputValue, PostInputValue};
-use crate::psyop::{PsyOp, Stage, is_vector_function};
+use crate::psyop::{PsyOp, is_vector_function};
 
+#[derive(Clone)]
 pub struct ScoredPost {
     pub post: Post,
     /// The filter URL that originally found this post.
@@ -139,77 +140,48 @@ fn run_function_execution(
     Ok(result)
 }
 
+/// Run the psyop's single function execution against the given entries.
+/// Returns scored posts in score-descending order.
 pub fn score(psyop: &PsyOp, entries: Vec<UnscoredEntry>) -> Result<Vec<ScoredPost>, crate::error::Error> {
-    let mut current: Vec<ScoredPost> = entries.into_iter()
+    let mut scored: Vec<ScoredPost> = entries.into_iter()
         .map(|e| ScoredPost { post: e.post, query: e.query, score: 0.0 })
         .collect();
 
-    for (i, stage) in psyop.stages.iter().enumerate() {
-        eprintln!("Running stage {i} with {} posts...", current.len());
+    eprintln!("Scoring {} posts...", scored.len());
 
-        // Resolve function to inline (fetch if remote)
-        let function = resolve_function(&stage.function)?;
-        let is_vector = is_vector_function(&function);
+    let function = resolve_function(&psyop.function)?;
+    let is_vector = is_vector_function(&function);
 
-        // Build input and execute
-        let items: Vec<PostInputValue> = current.iter()
-            .map(|s| new_post_input_value(&s.post, psyop.images, psyop.videos))
-            .collect();
+    let items: Vec<PostInputValue> = scored.iter()
+        .map(|s| new_post_input_value(&s.post, psyop.images, psyop.videos))
+        .collect();
 
-        let (input_json, split) = if is_vector {
-            // Vector: wrap in { items: [...] }
-            let input = PostsInputValue { items };
-            (serde_json::to_string(&input)?, false)
-        } else {
-            // Scalar: pass as plain array, use --split
-            (serde_json::to_string(&items)?, true)
-        };
+    let (input_json, split) = if is_vector {
+        let input = PostsInputValue { items };
+        (serde_json::to_string(&input)?, false)
+    } else {
+        (serde_json::to_string(&items)?, true)
+    };
 
-        let result = run_function_execution(&function, &stage.profile, &input_json, split, stage.invert)?;
+    let result = run_function_execution(&function, &psyop.profile, &input_json, split, psyop.invert)?;
 
-        // Extract scores
-        let scores: Vec<f64> = result.output.as_array()
-            .ok_or_else(|| crate::error::Error::Stage { stage: i, message: "expected array output".into() })?
-            .iter()
-            .map(|v| v.as_f64().unwrap_or(0.0))
-            .collect();
+    let scores: Vec<f64> = result.output.as_array()
+        .ok_or_else(|| crate::error::Error::Other("expected array output".into()))?
+        .iter()
+        .map(|v| v.as_f64().unwrap_or(0.0))
+        .collect();
 
-        if scores.len() != current.len() {
-            return Err(crate::error::Error::Stage {
-                stage: i,
-                message: format!("score count ({}) doesn't match post count ({})", scores.len(), current.len()),
-            });
-        }
-
-        for (scored, val) in current.iter_mut().zip(scores.iter()) {
-            scored.score = *val;
-        }
-
-        current.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Filter for next stage
-        if let Some(next_stage) = psyop.stages.get(i + 1) {
-            current = filter_for_next_stage(current, next_stage)?;
-        }
+    if scores.len() != scored.len() {
+        return Err(crate::error::Error::Other(
+            format!("score count ({}) doesn't match post count ({})", scores.len(), scored.len()),
+        ));
     }
 
-    Ok(current)
-}
-
-fn filter_for_next_stage(mut posts: Vec<ScoredPost>, next_stage: &Stage) -> Result<Vec<ScoredPost>, crate::error::Error> {
-    if let Some(threshold) = next_stage.threshold {
-        posts.retain(|s| s.score >= threshold);
+    for (s, val) in scored.iter_mut().zip(scores.iter()) {
+        s.score = *val;
     }
 
-    if let Some(count) = next_stage.count {
-        if next_stage.threshold.is_some() && posts.len() < count as usize {
-            return Err(crate::error::Error::Other(format!(
-                "not enough posts above threshold {:?} to satisfy count {} (only {} available)",
-                next_stage.threshold, count, posts.len(),
-            )));
-        }
-        posts.truncate(count as usize);
-    }
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
-    Ok(posts)
+    Ok(scored)
 }

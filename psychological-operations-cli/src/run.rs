@@ -134,106 +134,18 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
     let head = repo.head()?.peel_to_commit()?;
     let commit_sha = head.id().to_string();
 
-    let target_count = psyop.stages.first()
-        .and_then(|s| s.count)
-        .unwrap_or(100) as usize;
-    let now = chrono::Utc::now();
-
-    let db = crate::db::Db::open()?;
-
-    let already_queued = db.count_unscored(name)?;
-    let shortfall = target_count.saturating_sub(already_queued);
-
-    if shortfall > 0 {
-        // TODO: scraping has been split into its own `scrape` module; this
-        // run loop will be rewired to operate on tagged posts pulled by
-        // `psyop.filters[].tag`. Left unbuilt here so the rest of the
-        // crate keeps compiling while the wiring is in flight.
-        unimplemented!("psyop run scraping path is being rewired around the new scrape module");
-        #[allow(unreachable_code)]
-        let urls: Vec<String> = Vec::new();
-        let filter_by_url: std::collections::HashMap<&str, &crate::psyop::Filter> =
-            std::collections::HashMap::new();
-
-        let mut pw = crate::playwright::Playwright::spawn()?;
-
-        let states = pw.open_tabs(&urls)?;
-        for (url, state) in &states {
-            if state == "unexpected" {
-                return Err(error::Error::Playwright(format!("unexpected page state for filter url \"{url}\"")));
-            }
-        }
-
-        let mut collected = 0;
-        while collected < shortfall {
-            let Some((tweet, url)) = pw.next_tweet()? else { break };
-
-            let filter = match filter_by_url.get(url.as_str()) {
-                Some(f) => *f,
-                None => continue,
-            };
-
-            let validation = crate::psyop::valid_for_psyop(
-                &psyop, filter, &tweet.created,
-                tweet.likes, tweet.retweets, tweet.replies, &now,
-            );
-            if !validation.valid {
-                if validation.reason == Some("max_age") {
-                    pw.close_query(&url)?;
-                }
-                continue;
-            }
-
-            let post = crate::db::Post {
-                id: tweet.id,
-                handle: tweet.handle,
-                text: tweet.text,
-                images: tweet.images,
-                videos: tweet.videos,
-                created: tweet.created,
-                likes: tweet.likes,
-                retweets: tweet.retweets,
-                replies: tweet.replies,
-            };
-
-            let inserted = db.insert_post(&post, name, &commit_sha, &url)?;
-            if !inserted {
-                let prior_query = db.existing_post_query(&post.id, name, &commit_sha)?;
-                if prior_query.as_deref() == Some(url.as_str()) {
-                    pw.close_query(&url)?;
-                }
-                continue;
-            }
-
-            collected += 1;
-        }
-
-        pw.close()?;
-    }
-
-    let entries = db.get_oldest_unscored(name, target_count)?;
-    let mut scored_posts: Vec<crate::score::ScoredPost> = Vec::new();
-    if !entries.is_empty() {
-        let stage_results = crate::score::score(&psyop, entries)?;
-        for stage_result in &stage_results {
-            let ids: Vec<String> = stage_result.scored.iter().map(|s| s.post.id.clone()).collect();
-            let scores: Vec<f64> = stage_result.scored.iter().map(|s| s.score).collect();
-            db.set_scores(name, &commit_sha, stage_result.stage, &ids, &scores)?;
-        }
-        if let Some(last) = stage_results.into_iter().last() {
-            scored_posts = last.scored;
-        }
-    }
-
-    // Apply top-level psyop threshold + count to produce the final output set.
-    // scored_posts is already sorted by score descending (per score::score).
-    let mut output: Vec<&crate::score::ScoredPost> = scored_posts.iter().collect();
-    if let Some(threshold) = psyop.threshold {
-        output.retain(|s| s.score >= threshold);
-    }
-    if let Some(count) = psyop.count {
-        output.truncate(count as usize);
-    }
+    let _ = (commit_sha, name);
+    // TODO: psyop run is being rewired around the new (scrape, tags,
+    // sources) model. The scrape side now lives in `crate::scrape`; the
+    // psyop here will pull tagged posts from the DB via `psyop.sources`,
+    // run a single function execution, and persist scores. Left unbuilt
+    // here so the rest of the crate keeps compiling while the wiring is
+    // in flight.
+    unimplemented!("psyop run is being rewired around the new sources/tags model");
+    #[allow(unreachable_code)]
+    let scored_posts: Vec<crate::score::ScoredPost> = Vec::new();
+    #[allow(unreachable_code)]
+    let output: Vec<&crate::score::ScoredPost> = scored_posts.iter().collect();
 
     let mut destinations = cfg.notifications.clone();
     if let Some(per_psyop) = cfg.psyop_notifications.get(name) {

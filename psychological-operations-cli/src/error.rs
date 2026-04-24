@@ -18,8 +18,6 @@ pub enum Error {
     Http(#[from] reqwest::Error),
     #[error("invalid psyop: {0}")]
     InvalidPsyop(String),
-    #[error("stage {stage}: {message}")]
-    Stage { stage: usize, message: String },
     #[error("{0}")]
     Other(String),
 }

@@ -7,25 +7,12 @@ use objectiveai::functions::{
     InlineProfileOrRemoteCommitOptional,
 };
 use objectiveai::functions::executions::request::Strategy;
-use objectiveai::agent::InlineAgentBaseWithFallbacksOrRemoteCommitOptional;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Stage {
-    pub function: FullInlineFunctionOrRemoteCommitOptional,
-    pub profile: InlineProfileOrRemoteCommitOptional,
-    pub strategy: Strategy,
-    pub count: Option<u64>,
-    pub threshold: Option<f64>,
-    #[serde(default)]
-    pub invert: bool,
-}
-
-/// A psyop selects scored input by tag — every post stored under any of
-/// these tags becomes a candidate. Per-filter min_* values combine with the
-/// PsyOp's root-level min_* values by taking the greater of the two when
-/// deciding which tagged posts to actually score.
+/// A psyop pulls input by tag — every stored post under any of its
+/// sources' tags becomes a candidate. Per-source thresholds further
+/// narrow which tagged posts are eligible for scoring.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Filter {
+pub struct Source {
     pub tag: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_likes: Option<u64>,
@@ -33,18 +20,27 @@ pub struct Filter {
     pub min_retweets: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_replies: Option<u64>,
+    /// Reject tweets whose `created` is older than this many seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_age: Option<u64>,
+    /// Reject tweets whose `created` is younger than this many seconds.
+    /// Useful for letting engagement settle before scoring.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_age: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PsyOp {
-    pub agent: InlineAgentBaseWithFallbacksOrRemoteCommitOptional,
-    pub filters: Vec<Filter>,
+    pub sources: Vec<Source>,
+    pub function: FullInlineFunctionOrRemoteCommitOptional,
+    pub profile: InlineProfileOrRemoteCommitOptional,
+    pub strategy: Strategy,
+    /// Optional cap on how many tagged posts to feed into the function.
+    /// `None` means score every eligible post.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<u64>,
-    pub threshold: Option<f64>,
-    pub max_age: Option<u64>,
-    pub min_likes: Option<u64>,
-    pub min_retweets: Option<u64>,
-    pub min_replies: Option<u64>,
+    #[serde(default)]
+    pub invert: bool,
     /// If `false`, scored posts are sent to the function with an empty
     /// `images` array regardless of what was scraped. Defaults to `true`.
     #[serde(default = "default_true")]
@@ -53,7 +49,6 @@ pub struct PsyOp {
     /// `videos` array regardless of what was scraped. Defaults to `true`.
     #[serde(default = "default_true")]
     pub videos: bool,
-    pub stages: Vec<Stage>,
 }
 
 fn default_true() -> bool { true }
@@ -78,18 +73,8 @@ pub fn save(name: &str, psyop: &PsyOp) -> Result<(), crate::error::Error> {
 
 impl PsyOp {
     pub fn validate(&self) -> Result<(), crate::error::Error> {
-        if self.stages.is_empty() {
-            return Err(crate::error::Error::InvalidPsyop("stages must not be empty".into()));
-        }
-        if self.filters.is_empty() {
-            return Err(crate::error::Error::InvalidPsyop("filters must not be empty".into()));
-        }
-        let first = &self.stages[0];
-        if first.count.is_none() {
-            return Err(crate::error::Error::InvalidPsyop("first stage must have a count".into()));
-        }
-        if first.threshold.is_some() {
-            return Err(crate::error::Error::InvalidPsyop("first stage must not have a threshold".into()));
+        if self.sources.is_empty() {
+            return Err(crate::error::Error::InvalidPsyop("sources must not be empty".into()));
         }
         Ok(())
     }
@@ -100,40 +85,42 @@ pub struct ValidationResult {
     pub reason: Option<&'static str>,
 }
 
-/// Combine root and per-filter minimums by taking the greater of the two.
-/// Root acts as a global floor; per-filter can raise but not lower it.
-fn effective_min(root: Option<u64>, per_filter: Option<u64>) -> u64 {
-    root.unwrap_or(0).max(per_filter.unwrap_or(0))
-}
-
-pub fn valid_for_psyop(
-    psyop: &PsyOp,
-    filter: &Filter,
+/// Per-tweet score-time eligibility check against a single Source.
+pub fn valid_for_source(
+    source: &Source,
     created: &str,
     likes: u64,
     retweets: u64,
     replies: u64,
     now: &chrono::DateTime<chrono::Utc>,
 ) -> ValidationResult {
-    if let Some(max_age) = psyop.max_age {
-        if let Ok(created_time) = chrono::DateTime::parse_from_rfc3339(created) {
-            let age_seconds = (*now - created_time.with_timezone(&chrono::Utc)).num_seconds();
+    if let Ok(created_time) = chrono::DateTime::parse_from_rfc3339(created) {
+        let age_seconds = (*now - created_time.with_timezone(&chrono::Utc)).num_seconds();
+        if let Some(max_age) = source.max_age {
             if age_seconds > max_age as i64 {
                 return ValidationResult { valid: false, reason: Some("max_age") };
             }
         }
+        if let Some(min_age) = source.min_age {
+            if age_seconds < min_age as i64 {
+                return ValidationResult { valid: false, reason: Some("min_age") };
+            }
+        }
     }
-    let min_likes = effective_min(psyop.min_likes, filter.min_likes);
-    if likes < min_likes {
-        return ValidationResult { valid: false, reason: Some("min_likes") };
+    if let Some(min_likes) = source.min_likes {
+        if likes < min_likes {
+            return ValidationResult { valid: false, reason: Some("min_likes") };
+        }
     }
-    let min_retweets = effective_min(psyop.min_retweets, filter.min_retweets);
-    if retweets < min_retweets {
-        return ValidationResult { valid: false, reason: Some("min_retweets") };
+    if let Some(min_retweets) = source.min_retweets {
+        if retweets < min_retweets {
+            return ValidationResult { valid: false, reason: Some("min_retweets") };
+        }
     }
-    let min_replies = effective_min(psyop.min_replies, filter.min_replies);
-    if replies < min_replies {
-        return ValidationResult { valid: false, reason: Some("min_replies") };
+    if let Some(min_replies) = source.min_replies {
+        if replies < min_replies {
+            return ValidationResult { valid: false, reason: Some("min_replies") };
+        }
     }
     ValidationResult { valid: true, reason: None }
 }
