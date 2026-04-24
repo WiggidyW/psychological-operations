@@ -1,64 +1,12 @@
-pub mod agent_timeout;
-pub mod agent_max_attempts;
-pub mod notifications;
-pub mod psyops;
-pub mod scrapes;
-
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use clap::Subcommand;
 use serde::{Deserialize, Serialize};
 
-use notifications::destinations::Destination;
+use crate::notifications::destinations::Destination;
 
 // ---------------------------------------------------------------------------
-// Commands
-// ---------------------------------------------------------------------------
-
-#[derive(Subcommand)]
-pub enum Commands {
-    /// Agent intervention timeout in seconds
-    AgentTimeout {
-        #[command(subcommand)]
-        command: agent_timeout::Commands,
-    },
-    /// Agent intervention max retry attempts
-    AgentMaxAttempts {
-        #[command(subcommand)]
-        command: agent_max_attempts::Commands,
-    },
-    /// Manage notification targets
-    Notifications {
-        #[command(subcommand)]
-        command: notifications::Commands,
-    },
-    /// Manage psyops (enable/disable/list)
-    Psyops {
-        #[command(subcommand)]
-        command: psyops::Commands,
-    },
-    /// Manage scrapes (enable/disable/list)
-    Scrapes {
-        #[command(subcommand)]
-        command: scrapes::Commands,
-    },
-}
-
-impl Commands {
-    pub fn handle(self) -> Result<crate::Output, crate::error::Error> {
-        match self {
-            Commands::AgentTimeout { command } => command.handle(),
-            Commands::AgentMaxAttempts { command } => command.handle(),
-            Commands::Notifications { command } => command.handle(),
-            Commands::Psyops { command } => command.handle(),
-            Commands::Scrapes { command } => command.handle(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Config I/O
+// Paths
 // ---------------------------------------------------------------------------
 
 fn base_dir() -> PathBuf {
@@ -83,6 +31,10 @@ pub fn db_path() -> PathBuf {
     base_dir().join("data.db")
 }
 
+// ---------------------------------------------------------------------------
+// Per-name overrides
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct PsyopConfig {
     /// Per-psyop notification destinations. Stored here rather than inside
@@ -103,9 +55,36 @@ pub struct ScrapeConfig {
     /// When `true`, automatic execution skips this scrape.
     #[serde(default, skip_serializing_if = "is_false")]
     pub disabled: bool,
+    /// Optional override of the global agent intervention timeout for this
+    /// scrape. `None` means inherit `Config.agent_timeout`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_timeout: Option<u64>,
+    /// Optional override of the global agent intervention max retry attempts
+    /// for this scrape. `None` means inherit `Config.agent_max_attempts`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_max_attempts: Option<u64>,
 }
 
 fn is_false(b: &bool) -> bool { !*b }
+
+impl ScrapeConfig {
+    pub fn is_empty(&self) -> bool {
+        self.notifications.is_empty()
+            && !self.disabled
+            && self.agent_timeout.is_none()
+            && self.agent_max_attempts.is_none()
+    }
+}
+
+impl PsyopConfig {
+    pub fn is_empty(&self) -> bool {
+        self.notifications.is_empty() && !self.disabled
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Config root
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -116,11 +95,10 @@ pub struct Config {
     /// Global notification destinations — fire on every psyop run.
     #[serde(default)]
     pub notifications: Vec<Destination>,
-    /// Per-psyop overrides keyed by psyop name. Holds notification
-    /// destinations and the enable/disable flag.
+    /// Per-psyop overrides keyed by psyop name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub psyops: BTreeMap<String, PsyopConfig>,
-    /// Per-scrape overrides keyed by scrape name. Same shape as `psyops`.
+    /// Per-scrape overrides keyed by scrape name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub scrapes: BTreeMap<String, ScrapeConfig>,
 }

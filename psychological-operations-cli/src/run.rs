@@ -1,10 +1,14 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 
 use crate::agent;
 use crate::config;
-use crate::publish;
-use crate::invent;
 use crate::error;
+use crate::invent;
+use crate::notifications;
+use crate::psyops;
+use crate::scrapes;
+use crate::agent_timeout;
+use crate::agent_max_attempts;
 
 #[derive(Parser)]
 #[command(name = "psychological-operations")]
@@ -16,32 +20,40 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Run a psyop
-    Run {
-        #[command(flatten)]
-        args: RunArgs,
+    /// Manage psyops (list/get/enable/disable/publish/run/notifications)
+    Psyops {
+        #[command(subcommand)]
+        command: psyops::Commands,
     },
-    /// Publish a psyop definition
-    Publish {
-        #[command(flatten)]
-        args: publish::PublishArgs,
+    /// Manage scrapes (list/get/enable/disable/publish/notifications/agent overrides)
+    Scrapes {
+        #[command(subcommand)]
+        command: scrapes::Commands,
+    },
+    /// Global notification destinations
+    Notifications {
+        #[command(subcommand)]
+        command: notifications::Commands,
+    },
+    /// Global agent intervention timeout (seconds)
+    AgentTimeout {
+        #[command(subcommand)]
+        command: agent_timeout::Commands,
+    },
+    /// Global agent intervention max retry attempts
+    AgentMaxAttempts {
+        #[command(subcommand)]
+        command: agent_max_attempts::Commands,
     },
     /// Invent a function for scoring posts
     Invent {
         #[command(subcommand)]
         command: invent::Commands,
     },
-    /// List all psyops
-    List,
     /// Interact with a running agent intervention
     Agent {
         #[command(subcommand)]
         command: agent::Commands,
-    },
-    /// Manage configuration
-    Config {
-        #[command(subcommand)]
-        command: config::Commands,
     },
 }
 
@@ -66,58 +78,17 @@ impl std::fmt::Display for Output {
 pub async fn run() -> Result<Output, error::Error> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Run { args } => args.handle().await,
-        Commands::Publish { args } => args.handle(),
+        Commands::Psyops { command } => command.handle().await,
+        Commands::Scrapes { command } => command.handle(),
+        Commands::Notifications { command } => command.handle(),
+        Commands::AgentTimeout { command } => command.handle(),
+        Commands::AgentMaxAttempts { command } => command.handle(),
         Commands::Invent { command } => command.handle(),
-        Commands::List => list_psyops(),
         Commands::Agent { command } => command.handle().await,
-        Commands::Config { command } => command.handle(),
     }
 }
 
-fn list_psyops() -> Result<Output, error::Error> {
-    let dir = config::psyops_dir();
-    if !dir.exists() {
-        return Ok(Output::Api("[]".into()));
-    }
-    let mut names = Vec::new();
-    for entry in std::fs::read_dir(&dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir()
-            && path.join("psyop.json").exists()
-            && path.join(".git").exists()
-        {
-            if let Some(name) = entry.file_name().to_str() {
-                names.push(name.to_string());
-            }
-        }
-    }
-    names.sort();
-    Ok(Output::Api(serde_json::to_string(&names)?))
-}
-
-// ---------------------------------------------------------------------------
-// Run command
-// ---------------------------------------------------------------------------
-
-#[derive(Args)]
-struct RunArgs {
-    /// Psyop name
-    name: String,
-    /// Detach when agent needs input, printing PID
-    #[arg(long)]
-    detach_stdin: bool,
-}
-
-impl RunArgs {
-    async fn handle(self) -> Result<Output, error::Error> {
-        run_psyop(&self.name).await?;
-        Ok(Output::Empty)
-    }
-}
-
-async fn run_psyop(name: &str) -> Result<(), error::Error> {
+pub async fn run_psyop(name: &str) -> Result<(), error::Error> {
     let cfg = config::load();
     let psyop_dir = config::psyops_dir().join(name);
     let config_path = psyop_dir.join("psyop.json");
@@ -136,11 +107,7 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
 
     let _ = (commit_sha, name);
     // TODO: psyop run is being rewired around the new (scrape, tags,
-    // sources) model. The scrape side now lives in `crate::scrape`; the
-    // psyop here will pull tagged posts from the DB via `psyop.sources`,
-    // run a single function execution, and persist scores. Left unbuilt
-    // here so the rest of the crate keeps compiling while the wiring is
-    // in flight.
+    // sources) model.
     unimplemented!("psyop run is being rewired around the new sources/tags model");
     #[allow(unreachable_code)]
     let scored_posts: Vec<crate::score::ScoredPost> = Vec::new();
@@ -151,7 +118,7 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
     if let Some(per_psyop) = cfg.psyops.get(name) {
         destinations.extend(per_psyop.notifications.iter().cloned());
     }
-    config::notifications::destinations::notify(
+    crate::notifications::destinations::notify(
         &destinations,
         name,
         &psyop,
