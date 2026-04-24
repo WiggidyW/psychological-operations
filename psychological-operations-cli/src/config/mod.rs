@@ -59,6 +59,10 @@ pub fn psyops_dir() -> PathBuf {
     base_dir().join("psyops")
 }
 
+pub fn scrapes_dir() -> PathBuf {
+    base_dir().join("scrapes")
+}
+
 pub fn db_path() -> PathBuf {
     base_dir().join("data.db")
 }

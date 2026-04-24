@@ -2,6 +2,7 @@ pub mod error;
 pub mod config;
 pub mod db;
 pub mod psyop;
+pub mod scrape;
 pub mod input;
 pub mod playwright;
 pub mod playwright_binary;

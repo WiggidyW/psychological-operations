@@ -22,25 +22,19 @@ pub struct Stage {
     pub invert: bool,
 }
 
-/// A single search filter. Per-filter min_* values combine with the PsyOp's
-/// root-level min_* values by taking the greater of the two.
+/// A psyop selects scored input by tag — every post stored under any of
+/// these tags becomes a candidate. Per-filter min_* values combine with the
+/// PsyOp's root-level min_* values by taking the greater of the two when
+/// deciding which tagged posts to actually score.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Filter {
-    pub query: String,
+    pub tag: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_likes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_retweets: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_replies: Option<u64>,
-}
-
-impl Filter {
-    /// Build the X.com search URL this filter targets.
-    pub fn url(&self) -> String {
-        let q_enc = urlencoding::encode(&self.query);
-        format!("https://x.com/search?q={q_enc}&src=typed_query&f=live")
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

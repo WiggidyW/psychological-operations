@@ -145,13 +145,15 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
     let shortfall = target_count.saturating_sub(already_queued);
 
     if shortfall > 0 {
-        // URL-keyed map from filter URL → filter (for per-filter validation).
-        let urls_by_filter: Vec<(String, &crate::psyop::Filter)> = psyop.filters.iter()
-            .map(|f| (f.url(), f))
-            .collect();
-        let urls: Vec<String> = urls_by_filter.iter().map(|(u, _)| u.clone()).collect();
+        // TODO: scraping has been split into its own `scrape` module; this
+        // run loop will be rewired to operate on tagged posts pulled by
+        // `psyop.filters[].tag`. Left unbuilt here so the rest of the
+        // crate keeps compiling while the wiring is in flight.
+        unimplemented!("psyop run scraping path is being rewired around the new scrape module");
+        #[allow(unreachable_code)]
+        let urls: Vec<String> = Vec::new();
         let filter_by_url: std::collections::HashMap<&str, &crate::psyop::Filter> =
-            urls_by_filter.iter().map(|(u, f)| (u.as_str(), *f)).collect();
+            std::collections::HashMap::new();
 
         let mut pw = crate::playwright::Playwright::spawn()?;
 
@@ -212,10 +214,15 @@ async fn run_psyop(name: &str) -> Result<(), error::Error> {
     let entries = db.get_oldest_unscored(name, target_count)?;
     let mut scored_posts: Vec<crate::score::ScoredPost> = Vec::new();
     if !entries.is_empty() {
-        scored_posts = crate::score::score(&psyop, entries)?;
-        let ids: Vec<String> = scored_posts.iter().map(|s| s.post.id.clone()).collect();
-        let scores: Vec<f64> = scored_posts.iter().map(|s| s.score).collect();
-        db.set_scores(name, &commit_sha, &ids, &scores)?;
+        let stage_results = crate::score::score(&psyop, entries)?;
+        for stage_result in &stage_results {
+            let ids: Vec<String> = stage_result.scored.iter().map(|s| s.post.id.clone()).collect();
+            let scores: Vec<f64> = stage_result.scored.iter().map(|s| s.score).collect();
+            db.set_scores(name, &commit_sha, stage_result.stage, &ids, &scores)?;
+        }
+        if let Some(last) = stage_results.into_iter().last() {
+            scored_posts = last.scored;
+        }
     }
 
     // Apply top-level psyop threshold + count to produce the final output set.
