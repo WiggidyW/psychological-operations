@@ -54,6 +54,10 @@ pub struct ForwardArgs {
     /// Inline JSON agent definition
     #[arg(long)]
     agent_inline: Option<String>,
+    /// ID from the matching `instructions get` subcommand. Required by
+    /// objectiveai's recursive create.
+    #[arg(long)]
+    instructions_id: String,
     /// Seed for deterministic mock responses
     #[arg(long)]
     seed: Option<i64>,
@@ -100,6 +104,7 @@ impl ForwardArgs {
         if let Some(ref v) = self.agent_inline {
             args.extend(["--agent-inline".into(), v.clone()]);
         }
+        args.extend(["--instructions-id".into(), self.instructions_id.clone()]);
         if let Some(v) = self.seed {
             args.extend(["--seed".into(), v.to_string()]);
         }
