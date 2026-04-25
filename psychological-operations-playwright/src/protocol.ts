@@ -5,7 +5,15 @@ import { startMcpServer, stopMcpServer } from "./mcp.js";
 import { parseTweet, type TweetData } from "./tweet.js";
 import { findPort } from "./port.js";
 
-const USER_DATA_DIR = path.join(os.homedir(), ".psychological-operations", "chrome-data");
+function userDataDir(): string {
+  // POPS_CHROME_DATA_DIR is set by `Playwright::spawn_with_profile` so each
+  // concurrent scrape can run against an isolated snapshot of the shared
+  // base profile (concurrent launchPersistentContext on the same dir would
+  // fight over Chrome's profile lock).
+  const override_ = process.env["POPS_CHROME_DATA_DIR"];
+  if (override_ && override_.length > 0) return override_;
+  return path.join(os.homedir(), ".psychological-operations", "chrome-data");
+}
 
 let context: BrowserContext | null = null;
 let cdpPort: number | null = null;
@@ -20,11 +28,15 @@ interface QueryTab {
 }
 
 const tabs: QueryTab[] = [];
+// Pages that came back "unexpected" from open_tabs. Kept around so the user
+// can resolve the issue (login, captcha, etc.) in the visible Chrome window;
+// `retry_unexpected` then re-runs validatePage on each.
+const unexpectedPages: Map<string, Page> = new Map();
 
 async function ensureContext(): Promise<BrowserContext> {
   if (context !== null) return context;
   cdpPort = await findPort();
-  context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+  context = await chromium.launchPersistentContext(userDataDir(), {
     headless: false,
     channel: "chrome",
     args: [
@@ -81,8 +93,14 @@ async function openTabs(urls: string[]): Promise<Record<string, string>> {
     const state = await validatePage(page);
     results[url] = state;
 
-    if (state === "empty" || state === "unexpected") {
-      if (state === "empty") await page.close();
+    if (state === "empty") {
+      await page.close();
+      continue;
+    }
+    if (state === "unexpected") {
+      // Keep the page open so the user can resolve the issue manually; the
+      // Rust side will call retry_unexpected after agent intervention.
+      unexpectedPages.set(url, page);
       continue;
     }
 
@@ -145,6 +163,37 @@ function closeQuery(query: string): void {
   if (tab) tab.open = false;
 }
 
+async function retryUnexpected(urls: string[]): Promise<Record<string, string>> {
+  const results: Record<string, string> = {};
+  for (const url of urls) {
+    const page = unexpectedPages.get(url);
+    if (!page) {
+      results[url] = "unexpected";
+      continue;
+    }
+    // Re-navigate to the original URL in case the user wandered off (e.g.,
+    // logged in via a redirect chain that landed on home). Then revalidate.
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded" });
+    } catch {
+      // Navigation failure → still treat as unexpected so the runner can
+      // retry intervention.
+      results[url] = "unexpected";
+      continue;
+    }
+    const state = await validatePage(page);
+    results[url] = state;
+    if (state === "results") {
+      unexpectedPages.delete(url);
+      tabs.push({ query: url, page, buffer: [], seen: new Set(), open: true, staleScrolls: 0 });
+    } else if (state === "empty") {
+      unexpectedPages.delete(url);
+      await page.close();
+    }
+  }
+  return results;
+}
+
 function hasOpenTabs(): boolean {
   return tabs.some((t) => t.open);
 }
@@ -156,6 +205,7 @@ async function close(): Promise<void> {
     cdpPort = null;
   }
   tabs.length = 0;
+  unexpectedPages.clear();
 }
 
 // ── Protocol dispatch ───────────────────────────────────────────────────────
@@ -174,6 +224,9 @@ export async function handleCommand(cmd: Record<string, unknown>): Promise<unkno
     case "close_query":
       closeQuery(cmd["query"] as string);
       return { ok: true };
+
+    case "retry_unexpected":
+      return { states: await retryUnexpected(cmd["urls"] as string[]) };
 
     case "has_open_tabs":
       return { open: hasOpenTabs() };

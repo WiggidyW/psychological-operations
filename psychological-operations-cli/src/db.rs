@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +90,9 @@ impl Db {
         }
         let conn = Connection::open(&path)?;
         conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+        // Concurrent scrape runners issue overlapping write transactions; let
+        // SQLite block briefly instead of returning SQLITE_BUSY immediately.
+        conn.busy_timeout(Duration::from_secs(30))?;
         conn.execute_batch(SCHEMA)?;
         Ok(Self { conn })
     }

@@ -7,7 +7,7 @@ use super::Subject;
 
 /// Top-level JSON body shared by destinations that emit a structured payload
 /// (currently `http`, the `json` mode of `stdout`/`stderr`/`file`, and `exec`).
-/// Tagged on `kind` so consumers can branch on psyop vs scrape.
+/// Tagged on `kind` so consumers can branch on psyop vs scrape vs intervention.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Body<'a> {
@@ -20,6 +20,12 @@ pub enum Body<'a> {
         name: &'a str,
         tags: &'a [String],
         collected: usize,
+    },
+    Intervention {
+        name: &'a str,
+        commit_sha: &'a str,
+        pid: u32,
+        prompt: &'a str,
     },
 }
 
@@ -60,6 +66,12 @@ pub fn build<'a>(subject: &'a Subject<'a>) -> Body<'a> {
             tags: &scrape.tags,
             collected: *collected,
         },
+        Subject::Intervention { name, commit_sha, pid, prompt } => Body::Intervention {
+            name,
+            commit_sha,
+            pid: *pid,
+            prompt,
+        },
     }
 }
 
@@ -79,6 +91,16 @@ pub fn lines(subject: &Subject) -> (String, Vec<(String, String)>) {
         Subject::Scrape { name, collected, .. } => {
             let header = format!("Scrape \"{name}\" — collected {collected} new posts");
             (header, Vec::new())
+        }
+        Subject::Intervention { name, prompt, .. } => {
+            let header = format!("Agent intervention needed: scrape \"{name}\"");
+            // Render the prompt and the unblocking command as URL-style lines
+            // so destinations that ignore the label still surface both.
+            let lines = vec![
+                ("prompt".to_string(), prompt.to_string()),
+                ("reply".to_string(), format!("psychological-operations agent reply --scrape {name} \"<your reply>\"")),
+            ];
+            (header, lines)
         }
     }
 }

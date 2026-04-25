@@ -1,10 +1,81 @@
-//! `scrapes run <name>` — drive playwright to collect tweets matching the
-//! scrape's filters, store them with the scrape's tags, and stop once the
-//! target count is reached.
+//! `scrapes run` — drive playwright concurrently for every enabled scrape.
+//!
+//! Each scrape gets a private snapshot of the base Chrome profile (via
+//! `chrome_profile`) so concurrent `launchPersistentContext` calls don't
+//! fight over the profile lock. When a filter URL comes back as
+//! `unexpected` (login wall, captcha, etc.) the runner pauses and waits
+//! for `agent reply --scrape <name>` via `agent::intervention::await_one`.
 
+use crate::agent::intervention::{self, InterventionOutcome};
 use crate::scrape::{valid_for_scrape, Filter, Scrape};
+use crate::scrapes::chrome_profile;
 
-pub async fn run_scrape(name: &str) -> Result<crate::Output, crate::error::Error> {
+/// Public entry point for `scrapes run`. Enumerates every scrape directory
+/// on disk, filters out disabled ones for their current commit, and runs
+/// the rest concurrently. One task's failure does not abort siblings —
+/// per-task results are reported to stderr.
+pub async fn run_all() -> Result<crate::Output, crate::error::Error> {
+    let cfg = crate::config::load();
+    let dir = crate::config::scrapes_dir();
+    if !dir.exists() {
+        eprintln!("no scrapes directory at {}", dir.display());
+        return Ok(crate::Output::Empty);
+    }
+
+    let mut targets: Vec<String> = Vec::new();
+    for ent in std::fs::read_dir(&dir)? {
+        let ent = ent?;
+        let path = ent.path();
+        if !path.is_dir()
+            || !path.join("scrape.json").exists()
+            || !path.join(".git").exists()
+        {
+            continue;
+        }
+        let Some(name) = ent.file_name().to_str().map(|s| s.to_string()) else { continue };
+
+        // Resolve disabled flag against (scrape, commit) at enumeration time
+        // so sibling scrapes don't interfere via base-profile mutation.
+        let commit_sha = (|| -> Result<String, git2::Error> {
+            let repo = git2::Repository::open(&path)?;
+            let head = repo.head()?.peel_to_commit()?;
+            Ok(head.id().to_string())
+        })().unwrap_or_default();
+        if cfg.scrapes.get(&name).is_some_and(|o| o.disabled_for(&commit_sha)) {
+            eprintln!("scrape \"{name}\" is disabled for commit {commit_sha}; skipping");
+            continue;
+        }
+
+        targets.push(name);
+    }
+
+    if targets.is_empty() {
+        eprintln!("no enabled scrapes to run");
+        return Ok(crate::Output::Empty);
+    }
+
+    let handles: Vec<_> = targets.into_iter().map(|name| {
+        tokio::spawn(async move {
+            let result = run_scrape(&name).await;
+            (name, result)
+        })
+    }).collect();
+
+    for join in futures::future::join_all(handles).await {
+        match join {
+            Ok((name, Ok(_))) => eprintln!("scrape \"{name}\" finished"),
+            Ok((name, Err(e))) => eprintln!("scrape \"{name}\" failed: {e}"),
+            Err(e) => eprintln!("scrape task panicked: {e}"),
+        }
+    }
+
+    Ok(crate::Output::Empty)
+}
+
+/// Run a single scrape end-to-end: snapshot the Chrome profile, drive
+/// playwright, deal with any required agent interventions, store the
+/// resulting tagged posts, and copy the profile back via the `Drop` guard.
+async fn run_scrape(name: &str) -> Result<(), crate::error::Error> {
     let cfg = crate::config::load();
     let scrape_dir = crate::config::scrapes_dir().join(name);
     let scrape_path = scrape_dir.join("scrape.json");
@@ -16,15 +87,14 @@ pub async fn run_scrape(name: &str) -> Result<crate::Output, crate::error::Error
     let scrape: Scrape = serde_json::from_str(&data)?;
     scrape.validate()?;
 
-    let repo = git2::Repository::open(&scrape_dir)?;
-    let head = repo.head()?.peel_to_commit()?;
-    let commit_sha = head.id().to_string();
-
-    // Resolve disabled flag against (scrape, commit).
-    if cfg.scrapes.get(name).is_some_and(|o| o.disabled_for(&commit_sha)) {
-        eprintln!("scrape \"{name}\" is disabled for commit {commit_sha}; skipping");
-        return Ok(crate::Output::Empty);
-    }
+    // Scope the libgit2 handles tightly: they're !Send, so any await
+    // afterwards (intervention loop, notifications) would poison the
+    // tokio::spawn future if we held them open.
+    let commit_sha = {
+        let repo = git2::Repository::open(&scrape_dir)?;
+        let head = repo.head()?.peel_to_commit()?;
+        head.id().to_string()
+    };
 
     let target = scrape.count.unwrap_or(0) as usize;
     let now = chrono::Utc::now();
@@ -34,8 +104,13 @@ pub async fn run_scrape(name: &str) -> Result<crate::Output, crate::error::Error
     let shortfall = target.saturating_sub(already);
     if shortfall == 0 {
         eprintln!("scrape \"{name}\" already at target ({already}/{target}) for commit {commit_sha}");
-        return Ok(crate::Output::Empty);
+        return Ok(());
     }
+
+    // Snapshot the base Chrome profile so this scrape can run in parallel
+    // with siblings without sharing a profile lock. The session guard runs
+    // copy-back + cleanup on drop, even on panic.
+    let (_session, profile_dir) = chrome_profile::ProfileSession::begin(name)?;
 
     // URL → originating filter map for per-tweet validation.
     let urls_by_filter: Vec<(String, &Filter)> = scrape.filters.iter()
@@ -45,14 +120,17 @@ pub async fn run_scrape(name: &str) -> Result<crate::Output, crate::error::Error
     let filter_by_url: std::collections::HashMap<&str, &Filter> =
         urls_by_filter.iter().map(|(u, f)| (u.as_str(), *f)).collect();
 
-    let mut pw = crate::playwright::Playwright::spawn()?;
+    let mut pw = crate::playwright::Playwright::spawn_with_profile(&profile_dir)?;
     let states = pw.open_tabs(&urls)?;
-    for (url, state) in &states {
-        if state == "unexpected" {
-            return Err(crate::error::Error::Playwright(
-                format!("unexpected page state for filter url \"{url}\""),
-            ));
-        }
+
+    // Resolve any "unexpected" URLs via agent intervention, up to
+    // max_attempts; whatever's still unexpected after that is dropped.
+    let unexpected_urls: Vec<String> = states.iter()
+        .filter(|(_, s)| s.as_str() == "unexpected")
+        .map(|(u, _)| u.clone())
+        .collect();
+    if !unexpected_urls.is_empty() {
+        resolve_interventions(name, &commit_sha, &scrape, &cfg, &mut pw, unexpected_urls).await?;
     }
 
     let mut collected = 0;
@@ -114,5 +192,76 @@ pub async fn run_scrape(name: &str) -> Result<crate::Output, crate::error::Error
         },
     ).await;
 
-    Ok(crate::Output::Empty)
+    Ok(())
+}
+
+/// Loop on intervention attempts until every URL has come unstuck or
+/// `max_attempts` is reached. Each attempt fires a notification, blocks on
+/// the TCP listener for the per-scrape `agent_timeout`, then re-validates.
+async fn resolve_interventions(
+    name: &str,
+    commit_sha: &str,
+    scrape: &Scrape,
+    cfg: &crate::config::Config,
+    pw: &mut crate::playwright::Playwright,
+    initial_unexpected: Vec<String>,
+) -> Result<(), crate::error::Error> {
+    let (timeout_secs, max_attempts) = intervention::resolve_limits(cfg, name, commit_sha);
+    let mut destinations = cfg.notifications.clone();
+    if let Some(per_scrape) = cfg.scrapes.get(name) {
+        destinations.extend(per_scrape.notifications_for(commit_sha).iter().cloned());
+    }
+
+    let mut unresolved = initial_unexpected;
+    let mut attempt: u64 = 0;
+    while !unresolved.is_empty() && attempt < max_attempts {
+        attempt += 1;
+        let prompt = build_prompt(name, commit_sha, attempt, max_attempts, &unresolved);
+        let outcome = intervention::await_one(
+            name, commit_sha, scrape, &destinations, &prompt, timeout_secs,
+        ).await?;
+        match outcome {
+            InterventionOutcome::Timeout => {
+                eprintln!(
+                    "scrape \"{name}\" intervention attempt {attempt}/{max_attempts} timed out after {timeout_secs}s",
+                );
+            }
+            InterventionOutcome::Reply(reply) => {
+                if !reply.is_empty() {
+                    eprintln!("scrape \"{name}\" intervention reply: {reply}");
+                }
+                let new_states = pw.retry_unexpected(&unresolved)?;
+                unresolved.retain(|u| {
+                    new_states.get(u).map(|s| s.as_str()) == Some("unexpected")
+                });
+            }
+        }
+    }
+
+    if !unresolved.is_empty() {
+        eprintln!(
+            "scrape \"{name}\" giving up on {} unresolved url(s) after {max_attempts} attempt(s)",
+            unresolved.len(),
+        );
+    }
+    Ok(())
+}
+
+fn build_prompt(
+    name: &str,
+    commit_sha: &str,
+    attempt: u64,
+    max_attempts: u64,
+    urls: &[String],
+) -> String {
+    let mut s = format!(
+        "scrape \"{name}\" (commit {commit_sha}) attempt {attempt}/{max_attempts}: \
+         resolve the following url(s) in the open chrome window, then reply to unblock:\n",
+    );
+    for url in urls {
+        s.push_str("  - ");
+        s.push_str(url);
+        s.push('\n');
+    }
+    s
 }

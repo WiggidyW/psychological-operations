@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
 use crate::db::MediaUrl;
@@ -49,12 +50,27 @@ pub struct Playwright {
 
 impl Playwright {
     pub fn spawn() -> Result<Self, crate::error::Error> {
+        Self::spawn_inner(None)
+    }
+
+    /// Like `spawn`, but tells the playwright child to use `profile_dir` as
+    /// the Chrome user-data directory (via `POPS_CHROME_DATA_DIR`) instead of
+    /// the default shared `~/.psychological-operations/chrome-data`. Used by
+    /// concurrent scrape runs that snapshot the base profile.
+    pub fn spawn_with_profile(profile_dir: &Path) -> Result<Self, crate::error::Error> {
+        Self::spawn_inner(Some(profile_dir))
+    }
+
+    fn spawn_inner(profile_dir: Option<&Path>) -> Result<Self, crate::error::Error> {
         let binary_path = crate::playwright_binary::extract()?;
-        let mut child = Command::new(&binary_path)
-            .stdin(Stdio::piped())
+        let mut cmd = Command::new(&binary_path);
+        cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()?;
+            .stderr(Stdio::inherit());
+        if let Some(dir) = profile_dir {
+            cmd.env("POPS_CHROME_DATA_DIR", dir);
+        }
+        let mut child = cmd.spawn()?;
 
         let stdin = child.stdin.take().expect("failed to open stdin");
         let stdout = child.stdout.take().expect("failed to open stdout");
@@ -82,6 +98,19 @@ impl Playwright {
     pub fn open_tabs(&mut self, urls: &[String]) -> Result<std::collections::HashMap<String, String>, crate::error::Error> {
         let resp = self.send(&serde_json::json!({
             "cmd": "open_tabs",
+            "urls": urls,
+        }))?;
+        let parsed: OpenTabsResponse = serde_json::from_value(resp)?;
+        Ok(parsed.states)
+    }
+
+    /// Re-validate previously-unexpected URLs after agent intervention. The
+    /// page handles for those URLs are kept open by the playwright side; this
+    /// re-runs validation and promotes them into the scraping rotation if
+    /// they now show results. Returns `url -> new state`.
+    pub fn retry_unexpected(&mut self, urls: &[String]) -> Result<std::collections::HashMap<String, String>, crate::error::Error> {
+        let resp = self.send(&serde_json::json!({
+            "cmd": "retry_unexpected",
             "urls": urls,
         }))?;
         let parsed: OpenTabsResponse = serde_json::from_value(resp)?;

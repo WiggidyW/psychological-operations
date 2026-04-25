@@ -38,7 +38,8 @@ pub enum Destination {
 /// What's being notified about. Destinations format Psyop and Scrape
 /// subjects independently — text-mode renderers print a per-tweet line list
 /// for psyops and a single summary line for scrapes; JSON-mode renderers
-/// emit a tagged Body via `json_body::build`.
+/// emit a tagged Body via `json_body::build`. `Intervention` is scrape-only:
+/// psyops never call playwright, so they can't get blocked on agent input.
 pub enum Subject<'a> {
     Psyop {
         name: &'a str,
@@ -49,6 +50,12 @@ pub enum Subject<'a> {
         name: &'a str,
         scrape: &'a Scrape,
         collected: usize,
+    },
+    Intervention {
+        name: &'a str,
+        commit_sha: &'a str,
+        pid: u32,
+        prompt: &'a str,
     },
 }
 

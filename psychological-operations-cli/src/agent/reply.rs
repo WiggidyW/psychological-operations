@@ -2,15 +2,25 @@ use std::path::PathBuf;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-fn port_file_path(pid: u32) -> PathBuf {
-    dirs::home_dir()
-        .expect("could not determine home directory")
-        .join(".psychological-operations")
-        .join(format!("agent-{pid}.port"))
+use super::intervention;
+
+/// Where to find the listener: by-PID (legacy) or by-scrape-name (new).
+pub enum Address {
+    Pid(u32),
+    Scrape(String),
 }
 
-pub async fn send_reply(pid: u32, message: &str) -> Result<(), crate::error::Error> {
-    let port_file = port_file_path(pid);
+impl Address {
+    fn port_file(&self) -> PathBuf {
+        match self {
+            Address::Pid(pid) => intervention::pid_port_file(*pid),
+            Address::Scrape(name) => intervention::scrape_port_file(name),
+        }
+    }
+}
+
+pub async fn send_reply(addr: Address, message: &str) -> Result<(), crate::error::Error> {
+    let port_file = addr.port_file();
     if !port_file.exists() {
         return Err(crate::error::Error::Other(format!(
             "no agent waiting for input (port file not found: {})", port_file.display()
@@ -35,8 +45,7 @@ pub async fn send_reply(pid: u32, message: &str) -> Result<(), crate::error::Err
         tokio::io::stdout().flush().await?;
     }
 
-    // Clean up port file
-    let _ = tokio::fs::remove_file(&port_file).await;
-
+    // Listener owns its port files via a Drop guard, so we don't remove
+    // them here; just trying to is harmless if the listener is gone.
     Ok(())
 }
