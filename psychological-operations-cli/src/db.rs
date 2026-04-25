@@ -136,6 +136,20 @@ impl Db {
         Ok(inserted)
     }
 
+    /// How many distinct posts have been stored for this `(scrape, commit)`.
+    pub fn count_posts_for_scrape(
+        &self,
+        scrape: &str,
+        scrape_commit_sha: &str,
+    ) -> Result<usize, crate::error::Error> {
+        let n: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM posts WHERE scrape = ?1 AND scrape_commit_sha = ?2",
+            params![scrape, scrape_commit_sha],
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
+    }
+
     /// The `query` recorded on the existing `posts` row for this
     /// `(id, scrape, commit)`, or `None` if no such row exists. Used to
     /// detect when a search query has cycled back to a tweet it already

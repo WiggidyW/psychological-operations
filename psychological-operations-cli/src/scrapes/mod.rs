@@ -1,6 +1,7 @@
 pub mod notifications;
 pub mod agent_timeout;
 pub mod agent_max_attempts;
+pub mod run;
 
 use clap::{Args, Subcommand};
 use serde::Serialize;
@@ -40,6 +41,10 @@ pub enum Commands {
     Publish {
         #[command(flatten)]
         args: PublishArgs,
+    },
+    /// Run a scrape end-to-end (drive playwright, store tagged posts).
+    Run {
+        name: String,
     },
     /// Manage per-scrape notification destinations.
     Notifications {
@@ -96,6 +101,7 @@ impl Commands {
             Commands::Enable { name, commit } => set_disabled(&name, commit.as_deref(), false),
             Commands::Disable { name, commit } => set_disabled(&name, commit.as_deref(), true),
             Commands::Publish { args } => publish(args),
+            Commands::Run { name } => run::run_scrape(&name),
             Commands::Notifications { command } => command.handle(),
             Commands::AgentTimeout { command } => command.handle(),
             Commands::AgentMaxAttempts { command } => command.handle(),

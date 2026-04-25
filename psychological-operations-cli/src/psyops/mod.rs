@@ -88,7 +88,15 @@ impl Commands {
             Commands::Enable { name, commit } => set_disabled(&name, commit.as_deref(), false),
             Commands::Disable { name, commit } => set_disabled(&name, commit.as_deref(), true),
             Commands::Publish { args } => publish(args),
-            Commands::Run { name } => crate::run_psyop(&name).await.map(|_| crate::Output::Empty),
+            Commands::Run { name } => {
+                let _ = name;
+                // TODO: implement psyop run — pull tagged unscored posts via
+                // `db.get_oldest_unscored_for_tags(name, commit, source.tags, count)`
+                // for each `psyop.sources[i]`, score them via the single
+                // function execution, persist with `db.set_scores(name,
+                // commit, ids, scores, psyop.tags)`, then notify.
+                unimplemented!("psyops run is being wired around the new tags model");
+            }
             Commands::Notifications { command } => command.handle(),
         }
     }

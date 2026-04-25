@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 
 use crate::agent;
-use crate::config;
 use crate::error;
 use crate::invent;
 use crate::notifications;
@@ -25,7 +24,7 @@ enum Commands {
         #[command(subcommand)]
         command: psyops::Commands,
     },
-    /// Manage scrapes (list/get/enable/disable/publish/notifications/agent overrides)
+    /// Manage scrapes (list/get/enable/disable/publish/run/notifications/agent overrides)
     Scrapes {
         #[command(subcommand)]
         command: scrapes::Commands,
@@ -86,44 +85,4 @@ pub async fn run() -> Result<Output, error::Error> {
         Commands::Invent { command } => command.handle(),
         Commands::Agent { command } => command.handle().await,
     }
-}
-
-pub async fn run_psyop(name: &str) -> Result<(), error::Error> {
-    let cfg = config::load();
-    let psyop_dir = config::psyops_dir().join(name);
-    let config_path = psyop_dir.join("psyop.json");
-
-    if !config_path.exists() {
-        return Err(error::Error::PsyopNotFound(config_path.display().to_string()));
-    }
-
-    let data = std::fs::read_to_string(&config_path)?;
-    let psyop: crate::psyop::PsyOp = serde_json::from_str(&data)?;
-    psyop.validate()?;
-
-    let repo = git2::Repository::open(&psyop_dir)?;
-    let head = repo.head()?.peel_to_commit()?;
-    let commit_sha = head.id().to_string();
-
-    let _ = (commit_sha, name);
-    // TODO: psyop run is being rewired around the new (scrape, tags,
-    // sources) model.
-    unimplemented!("psyop run is being rewired around the new sources/tags model");
-    #[allow(unreachable_code)]
-    let scored_posts: Vec<crate::score::ScoredPost> = Vec::new();
-    #[allow(unreachable_code)]
-    let output: Vec<&crate::score::ScoredPost> = scored_posts.iter().collect();
-
-    let mut destinations = cfg.notifications.clone();
-    if let Some(per_psyop) = cfg.psyops.get(name) {
-        destinations.extend(per_psyop.notifications_for(&commit_sha).iter().cloned());
-    }
-    crate::notifications::destinations::notify(
-        &destinations,
-        name,
-        &psyop,
-        &output,
-    ).await;
-
-    Ok(())
 }
