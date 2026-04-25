@@ -42,7 +42,7 @@ AUTO_PROFILE = {
 FUNCTION_REF = {
     "remote": "filesystem",
     "owner": "ObjectiveAI",
-    "repository": "unsettlingness-ranker",
+    "repository": "unsettlingness-ranker-v",
 }
 
 STRATEGY = {"type": "swiss_system", "pool": 10, "rounds": 2}

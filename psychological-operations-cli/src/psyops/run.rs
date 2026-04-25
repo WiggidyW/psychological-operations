@@ -48,15 +48,26 @@ pub async fn run_all() -> Result<crate::Output, crate::error::Error> {
         return Ok(crate::Output::Empty);
     }
 
+    // Names that errored out at any point this run (eligibility check,
+    // task panic, or run_psyop error). Once a psyop is in here it's
+    // permanently excluded from later rounds — re-running the same psyop
+    // round-after-round was producing the same error each time, wasting
+    // upstream calls. The set also drives the final exit code.
+    let mut failed: std::collections::HashSet<String> = std::collections::HashSet::new();
+
     let mut round: u32 = 0;
     loop {
         round += 1;
         let mut eligible: Vec<String> = Vec::new();
         for name in &targets {
+            if failed.contains(name) { continue; }
             match has_enough_data(name) {
                 Ok(true) => eligible.push(name.clone()),
                 Ok(false) => {}
-                Err(e) => eprintln!("psyop \"{name}\" eligibility check failed: {e}"),
+                Err(e) => {
+                    eprintln!("psyop \"{name}\" eligibility check failed: {e}");
+                    failed.insert(name.clone());
+                }
             }
         }
         if eligible.is_empty() {
@@ -77,12 +88,25 @@ pub async fn run_all() -> Result<crate::Output, crate::error::Error> {
         }).collect();
 
         for join in futures::future::join_all(handles).await {
-            match join {
-                Ok((name, Ok(_))) => eprintln!("psyop \"{name}\" finished"),
-                Ok((name, Err(e))) => eprintln!("psyop \"{name}\" failed: {e}"),
-                Err(e) => eprintln!("psyop task panicked: {e}"),
+            let (name, result) = join.unwrap();
+            match result {
+                Ok(_) => eprintln!("psyop \"{name}\" finished"),
+                Err(e) => {
+                    eprintln!("psyop \"{name}\" failed: {e}");
+                    failed.insert(name);
+                }
             }
         }
+    }
+
+    if !failed.is_empty() {
+        let mut sorted: Vec<&String> = failed.iter().collect();
+        sorted.sort();
+        return Err(crate::error::Error::Other(format!(
+            "{} psyop(s) failed: {}",
+            failed.len(),
+            sorted.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
+        )));
     }
 
     Ok(crate::Output::Empty)
