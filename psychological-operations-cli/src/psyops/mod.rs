@@ -40,11 +40,18 @@ pub enum Commands {
         #[command(flatten)]
         args: PublishArgs,
     },
-    /// Run every enabled psyop in rounds: each round runs all psyops that
-    /// have enough data concurrently; later rounds pick up psyops whose
-    /// inputs depend on earlier rounds' scores. There is no single-name
-    /// variant — `psyops run` always operates on the full set.
-    Run,
+    /// Run enabled psyops in rounds: each round runs all psyops that have
+    /// enough data concurrently; later rounds pick up psyops whose inputs
+    /// depend on earlier rounds' scores. With no flags, runs the full set.
+    /// `--name X` narrows the run to one psyop; `--commit Y` additionally
+    /// requires the psyop's HEAD to match Y. `--commit` without `--name`
+    /// is rejected.
+    Run {
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long, requires = "name")]
+        commit: Option<String>,
+    },
     /// Manage per-psyop notification destinations.
     Notifications {
         #[command(subcommand)]
@@ -90,7 +97,7 @@ impl Commands {
             Commands::Enable { name, commit } => set_disabled(&name, commit.as_deref(), false),
             Commands::Disable { name, commit } => set_disabled(&name, commit.as_deref(), true),
             Commands::Publish { args } => publish(args),
-            Commands::Run => run::run_all().await,
+            Commands::Run { name, commit } => run::run_all(name.as_deref(), commit.as_deref()).await,
             Commands::Notifications { command } => command.handle(),
         }
     }

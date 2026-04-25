@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use crate::db::UnscoredEntry;
 use crate::psyop::{valid_for_source, PsyOp, Source};
 
-pub async fn run_all() -> Result<crate::Output, crate::error::Error> {
+pub async fn run_all(name_filter: Option<&str>, commit_filter: Option<&str>) -> Result<crate::Output, crate::error::Error> {
     let cfg = crate::config::load();
     let dir = crate::config::psyops_dir();
     if !dir.exists() {
@@ -30,12 +30,30 @@ pub async fn run_all() -> Result<crate::Output, crate::error::Error> {
         }
         let Some(name) = ent.file_name().to_str().map(|s| s.to_string()) else { continue };
 
+        if let Some(want) = name_filter {
+            if name != want { continue; }
+        }
+
         let commit_sha = (|| -> Result<String, git2::Error> {
             let repo = git2::Repository::open(&path)?;
             let head = repo.head()?.peel_to_commit()?;
             Ok(head.id().to_string())
         })().unwrap_or_default();
-        if cfg.psyops.get(&name).is_some_and(|o| o.disabled_for(&commit_sha)) {
+
+        if let Some(want_commit) = commit_filter {
+            if commit_sha != want_commit {
+                eprintln!(
+                    "psyop \"{name}\" HEAD is {commit_sha}, not requested commit {want_commit}; skipping",
+                );
+                continue;
+            }
+        }
+
+        // `--name` is an explicit operator request; override the disabled
+        // gate so a "disable then run standalone" workflow is possible.
+        if name_filter.is_none()
+            && cfg.psyops.get(&name).is_some_and(|o| o.disabled_for(&commit_sha))
+        {
             eprintln!("psyop \"{name}\" is disabled for commit {commit_sha}; skipping");
             continue;
         }

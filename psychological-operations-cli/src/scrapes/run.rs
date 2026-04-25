@@ -14,7 +14,7 @@ use crate::scrapes::chrome_profile;
 /// on disk, filters out disabled ones for their current commit, and runs
 /// the rest concurrently. One task's failure does not abort siblings —
 /// per-task results are reported to stderr.
-pub async fn run_all() -> Result<crate::Output, crate::error::Error> {
+pub async fn run_all(name_filter: Option<&str>, commit_filter: Option<&str>) -> Result<crate::Output, crate::error::Error> {
     let cfg = crate::config::load();
     let dir = crate::config::scrapes_dir();
     if !dir.exists() {
@@ -34,7 +34,27 @@ pub async fn run_all() -> Result<crate::Output, crate::error::Error> {
         }
         let Some(name) = ent.file_name().to_str().map(|s| s.to_string()) else { continue };
 
-        match should_run(&name, &cfg) {
+        if let Some(want) = name_filter {
+            if name != want { continue; }
+        }
+        if let Some(want_commit) = commit_filter {
+            // Already gated above by name_filter; this only fires when name matches.
+            let head = (|| -> Result<String, git2::Error> {
+                let repo = git2::Repository::open(&path)?;
+                let head = repo.head()?.peel_to_commit()?;
+                Ok(head.id().to_string())
+            })().unwrap_or_default();
+            if head != want_commit {
+                eprintln!(
+                    "scrape \"{name}\" HEAD is {head}, not requested commit {want_commit}; skipping",
+                );
+                continue;
+            }
+        }
+
+        // `--name` is an explicit operator request; skip the disabled gate
+        // so a "disable then run standalone" workflow is possible.
+        match should_run(&name, &cfg, name_filter.is_some()) {
             Ok(true) => targets.push(name),
             Ok(false) => {}
             Err(e) => eprintln!("scrape \"{name}\" eligibility check failed: {e}"),
@@ -77,7 +97,7 @@ pub async fn run_all() -> Result<crate::Output, crate::error::Error> {
 ///   - `count: Some(n)` and at least `n` posts already stored for
 ///     `(scrape, commit)` → no, queue is already full.
 ///   - Otherwise → yes.
-fn should_run(name: &str, cfg: &crate::config::Config) -> Result<bool, crate::error::Error> {
+fn should_run(name: &str, cfg: &crate::config::Config, override_disabled: bool) -> Result<bool, crate::error::Error> {
     let scrape_dir = crate::config::scrapes_dir().join(name);
     let scrape_path = scrape_dir.join("scrape.json");
     if !scrape_path.exists() {
@@ -93,7 +113,9 @@ fn should_run(name: &str, cfg: &crate::config::Config) -> Result<bool, crate::er
         head.id().to_string()
     };
 
-    if cfg.scrapes.get(name).is_some_and(|o| o.disabled_for(&commit_sha)) {
+    if !override_disabled
+        && cfg.scrapes.get(name).is_some_and(|o| o.disabled_for(&commit_sha))
+    {
         eprintln!("scrape \"{name}\" is disabled for commit {commit_sha}; skipping");
         return Ok(false);
     }
