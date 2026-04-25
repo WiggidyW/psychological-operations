@@ -58,6 +58,10 @@ pub struct PsyOp {
     /// `videos` array regardless of what was scraped. Defaults to `true`.
     #[serde(default = "default_true")]
     pub videos: bool,
+    /// Minimum total candidates (across all sources, deduped) required to
+    /// run. The effective floor is `max(2, count.unwrap_or(0))`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
 }
 
 fn default_true() -> bool { true }

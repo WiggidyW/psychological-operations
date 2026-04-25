@@ -40,10 +40,11 @@ pub enum Commands {
         #[command(flatten)]
         args: PublishArgs,
     },
-    /// Run a psyop end-to-end (score eligible tagged posts, notify).
-    Run {
-        name: String,
-    },
+    /// Run every enabled psyop in rounds: each round runs all psyops that
+    /// have enough data concurrently; later rounds pick up psyops whose
+    /// inputs depend on earlier rounds' scores. There is no single-name
+    /// variant — `psyops run` always operates on the full set.
+    Run,
     /// Manage per-psyop notification destinations.
     Notifications {
         #[command(subcommand)]
@@ -89,7 +90,7 @@ impl Commands {
             Commands::Enable { name, commit } => set_disabled(&name, commit.as_deref(), false),
             Commands::Disable { name, commit } => set_disabled(&name, commit.as_deref(), true),
             Commands::Publish { args } => publish(args),
-            Commands::Run { name } => run::run_psyop(&name).await,
+            Commands::Run => run::run_all().await,
             Commands::Notifications { command } => command.handle(),
         }
     }
