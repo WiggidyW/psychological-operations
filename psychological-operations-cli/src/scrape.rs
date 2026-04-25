@@ -38,12 +38,20 @@ pub struct Scrape {
     /// at least one tag.
     pub tags: Vec<String>,
     /// How many tweets to collect per run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<u64>,
     /// Reject tweets whose `created` is older than this many seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_age: Option<u64>,
+    /// Reject tweets whose `created` is younger than this many seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_age: Option<u64>,
     /// Root-level engagement floors. Per-filter values are combined by max.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_likes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_retweets: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_replies: Option<u64>,
 }
 
@@ -97,11 +105,16 @@ pub fn valid_for_scrape(
     replies: u64,
     now: &chrono::DateTime<chrono::Utc>,
 ) -> ValidationResult {
-    if let Some(max_age) = scrape.max_age {
-        if let Ok(created_time) = chrono::DateTime::parse_from_rfc3339(created) {
-            let age_seconds = (*now - created_time.with_timezone(&chrono::Utc)).num_seconds();
+    if let Ok(created_time) = chrono::DateTime::parse_from_rfc3339(created) {
+        let age_seconds = (*now - created_time.with_timezone(&chrono::Utc)).num_seconds();
+        if let Some(max_age) = scrape.max_age {
             if age_seconds > max_age as i64 {
                 return ValidationResult { valid: false, reason: Some("max_age") };
+            }
+        }
+        if let Some(min_age) = scrape.min_age {
+            if age_seconds < min_age as i64 {
+                return ValidationResult { valid: false, reason: Some("min_age") };
             }
         }
     }
