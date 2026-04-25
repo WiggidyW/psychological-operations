@@ -54,12 +54,19 @@ pub async fn run_all() -> Result<crate::Output, crate::error::Error> {
         return Ok(crate::Output::Empty);
     }
 
-    let handles: Vec<_> = targets.into_iter().map(|name| {
-        tokio::spawn(async move {
+    // Stagger spawns by `scraper_spawn_delay_secs` so a burst of scrapes
+    // doesn't hammer X's IP-level rate limit all at once.
+    let spawn_delay = std::time::Duration::from_secs(cfg.scraper_spawn_delay_secs);
+    let mut handles: Vec<_> = Vec::with_capacity(targets.len());
+    for (i, name) in targets.into_iter().enumerate() {
+        if i > 0 && !spawn_delay.is_zero() {
+            tokio::time::sleep(spawn_delay).await;
+        }
+        handles.push(tokio::spawn(async move {
             let result = run_scrape(&name).await;
             (name, result)
-        })
-    }).collect();
+        }));
+    }
 
     for join in futures::future::join_all(handles).await {
         match join {

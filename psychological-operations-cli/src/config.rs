@@ -168,6 +168,11 @@ pub struct Config {
     pub agent_timeout: u64,
     #[serde(default = "default_agent_max_attempts")]
     pub agent_max_attempts: u64,
+    /// Seconds to wait between spawning consecutive scrape tasks in
+    /// `scrapes run`. Staggers Chrome opens against X's IP-level rate
+    /// limits when many scrapes start at once.
+    #[serde(default = "default_scraper_spawn_delay_secs")]
+    pub scraper_spawn_delay_secs: u64,
     /// Global notification destinations — fire on every psyop run.
     #[serde(default)]
     pub notifications: Vec<Destination>,
@@ -183,12 +188,14 @@ pub struct Config {
 
 fn default_agent_timeout() -> u64 { 180 }
 fn default_agent_max_attempts() -> u64 { 3 }
+fn default_scraper_spawn_delay_secs() -> u64 { 10 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             agent_timeout: default_agent_timeout(),
             agent_max_attempts: default_agent_max_attempts(),
+            scraper_spawn_delay_secs: default_scraper_spawn_delay_secs(),
             notifications: Vec::new(),
             psyops: BTreeMap::new(),
             scrapes: BTreeMap::new(),
