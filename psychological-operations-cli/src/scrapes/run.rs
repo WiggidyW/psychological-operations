@@ -2,9 +2,9 @@
 //! scrape's filters, store them with the scrape's tags, and stop once the
 //! target count is reached.
 
-use crate::scrape::{self, valid_for_scrape, Filter, Scrape};
+use crate::scrape::{valid_for_scrape, Filter, Scrape};
 
-pub fn run_scrape(name: &str) -> Result<crate::Output, crate::error::Error> {
+pub async fn run_scrape(name: &str) -> Result<crate::Output, crate::error::Error> {
     let cfg = crate::config::load();
     let scrape_dir = crate::config::scrapes_dir().join(name);
     let scrape_path = scrape_dir.join("scrape.json");
@@ -100,7 +100,19 @@ pub fn run_scrape(name: &str) -> Result<crate::Output, crate::error::Error> {
     pw.close()?;
 
     eprintln!("scrape \"{name}\" collected {collected} new posts (commit {commit_sha})");
-    // TODO: per-scrape notifications (cfg.scrapes.get(name).notifications_for(&commit_sha)).
-    let _ = (&cfg, &scrape::valid_for_scrape);
+
+    let mut destinations = cfg.notifications.clone();
+    if let Some(per_scrape) = cfg.scrapes.get(name) {
+        destinations.extend(per_scrape.notifications_for(&commit_sha).iter().cloned());
+    }
+    crate::notifications::destinations::notify(
+        &destinations,
+        crate::notifications::destinations::Subject::Scrape {
+            name,
+            scrape: &scrape,
+            collected,
+        },
+    ).await;
+
     Ok(crate::Output::Empty)
 }

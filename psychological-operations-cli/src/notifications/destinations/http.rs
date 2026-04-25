@@ -2,13 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::psyop::PsyOp;
-use crate::score::ScoredPost;
+use super::{json_body, Subject};
 
-use super::json_body;
-
-/// Configuration for an HTTP notification destination. Sends a JSON body
-/// describing the psyop and its scored output to an arbitrary endpoint.
+/// Configuration for an HTTP notification destination. Sends a tagged JSON
+/// body describing the subject (psyop or scrape) to an arbitrary endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Http {
     pub url: String,
@@ -20,13 +17,8 @@ pub struct Http {
 
 fn default_method() -> String { "POST".to_string() }
 
-pub async fn send(
-    cfg: &Http,
-    psyop_name: &str,
-    _psyop: &PsyOp,
-    output: &[&ScoredPost],
-) -> Result<(), crate::error::Error> {
-    let body = json_body::build(psyop_name, output);
+pub async fn send(cfg: &Http, subject: &Subject<'_>) -> Result<(), crate::error::Error> {
+    let body = json_body::build(subject);
 
     let method = reqwest::Method::from_bytes(cfg.method.as_bytes())
         .map_err(|e| crate::error::Error::Other(format!("invalid http method \"{}\": {e}", cfg.method)))?;

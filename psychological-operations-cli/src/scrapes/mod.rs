@@ -94,14 +94,14 @@ struct ScrapeEntry {
 }
 
 impl Commands {
-    pub fn handle(self) -> Result<crate::Output, crate::error::Error> {
+    pub async fn handle(self) -> Result<crate::Output, crate::error::Error> {
         match self {
             Commands::List { enabled, disabled } => list(enabled, disabled),
             Commands::Get { name } => get(&name),
             Commands::Enable { name, commit } => set_disabled(&name, commit.as_deref(), false),
             Commands::Disable { name, commit } => set_disabled(&name, commit.as_deref(), true),
             Commands::Publish { args } => publish(args),
-            Commands::Run { name } => run::run_scrape(&name),
+            Commands::Run { name } => run::run_scrape(&name).await,
             Commands::Notifications { command } => command.handle(),
             Commands::AgentTimeout { command } => command.handle(),
             Commands::AgentMaxAttempts { command } => command.handle(),

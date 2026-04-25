@@ -3,10 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::psyop::PsyOp;
-use crate::score::ScoredPost;
-
-use super::json_body;
+use super::{json_body, Subject};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -22,12 +19,7 @@ pub struct File {
     pub path: PathBuf,
 }
 
-pub async fn send(
-    cfg: &File,
-    psyop_name: &str,
-    _psyop: &PsyOp,
-    output: &[&ScoredPost],
-) -> Result<(), crate::error::Error> {
+pub async fn send(cfg: &File, subject: &Subject<'_>) -> Result<(), crate::error::Error> {
     if let Some(parent) = cfg.path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;
@@ -41,21 +33,19 @@ pub async fn send(
 
     match cfg.mode {
         Mode::Urls => {
-            for s in output {
-                writeln!(f, "https://x.com/{}/status/{}", s.post.handle, s.post.id)?;
+            let (_, lines) = json_body::lines(subject);
+            for (_, url) in lines {
+                writeln!(f, "{url}")?;
             }
         }
         Mode::UrlsWithScores => {
-            for s in output {
-                writeln!(
-                    f,
-                    "{:.4} — https://x.com/{}/status/{}",
-                    s.score, s.post.handle, s.post.id,
-                )?;
+            let (_, lines) = json_body::lines(subject);
+            for (label, url) in lines {
+                writeln!(f, "{label} — {url}")?;
             }
         }
         Mode::Json => {
-            let body = json_body::build(psyop_name, output);
+            let body = json_body::build(subject);
             writeln!(f, "{}", serde_json::to_string(&body)?)?;
         }
     }

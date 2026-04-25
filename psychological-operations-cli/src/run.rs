@@ -78,7 +78,7 @@ pub async fn run() -> Result<Output, error::Error> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Psyops { command } => command.handle().await,
-        Commands::Scrapes { command } => command.handle(),
+        Commands::Scrapes { command } => command.handle().await,
         Commands::Notifications { command } => command.handle(),
         Commands::AgentTimeout { command } => command.handle(),
         Commands::AgentMaxAttempts { command } => command.handle(),

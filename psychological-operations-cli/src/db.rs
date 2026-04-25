@@ -173,15 +173,24 @@ impl Db {
     }
 
     /// Count distinct posts that carry any of the given tags AND have no
-    /// matching scores row for `(psyop, psyop_commit_sha)`.
+    /// matching scores row for `(psyop, psyop_commit_sha)`. When
+    /// `min_score` is `Some(t)`, also requires that the post has at least
+    /// one score row (under any psyop) at or above `t`.
     pub fn count_unscored_for_tags(
         &self,
         psyop: &str,
         psyop_commit_sha: &str,
         tags: &[String],
+        min_score: Option<f64>,
     ) -> Result<usize, crate::error::Error> {
         if tags.is_empty() { return Ok(0); }
         let placeholders = vec!["?"; tags.len()].join(",");
+        let min_score_clause = if min_score.is_some() {
+            "AND EXISTS (
+               SELECT 1 FROM scores prev
+               WHERE prev.post_id = t.post_id AND prev.score >= ?
+             )"
+        } else { "" };
         let sql = format!(
             "SELECT COUNT(DISTINCT t.post_id)
              FROM post_tags t
@@ -191,11 +200,15 @@ impl Db {
                  WHERE s.post_id = t.post_id
                    AND s.psyop = ?
                    AND s.psyop_commit_sha = ?
-               )",
+               )
+               {min_score_clause}",
         );
         let mut params_vec: Vec<&dyn rusqlite::ToSql> = tags.iter().map(|t| t as &dyn rusqlite::ToSql).collect();
         params_vec.push(&psyop);
         params_vec.push(&psyop_commit_sha);
+        if let Some(t) = &min_score {
+            params_vec.push(t);
+        }
         let n: i64 = self.conn.query_row(&sql, params_vec.as_slice(), |row| row.get(0))?;
         Ok(n as usize)
     }
@@ -210,10 +223,17 @@ impl Db {
         psyop: &str,
         psyop_commit_sha: &str,
         tags: &[String],
+        min_score: Option<f64>,
         limit: usize,
     ) -> Result<Vec<UnscoredEntry>, crate::error::Error> {
         if tags.is_empty() { return Ok(Vec::new()); }
         let placeholders = vec!["?"; tags.len()].join(",");
+        let min_score_clause = if min_score.is_some() {
+            "AND EXISTS (
+               SELECT 1 FROM scores prev
+               WHERE prev.post_id = p.id AND prev.score >= ?
+             )"
+        } else { "" };
         let sql = format!(
             "SELECT p.id, p.handle, p.created, p.likes, p.retweets, p.replies,
                     c.text, c.images, c.videos, p.query
@@ -232,6 +252,7 @@ impl Db {
                    AND s.psyop = ?
                    AND s.psyop_commit_sha = ?
                )
+               {min_score_clause}
              GROUP BY p.id
              ORDER BY MIN(p.scraped_at) ASC
              LIMIT ?",
@@ -240,6 +261,9 @@ impl Db {
         let mut params_vec: Vec<&dyn rusqlite::ToSql> = tags.iter().map(|t| t as &dyn rusqlite::ToSql).collect();
         params_vec.push(&psyop);
         params_vec.push(&psyop_commit_sha);
+        if let Some(t) = &min_score {
+            params_vec.push(t);
+        }
         params_vec.push(&limit_i64);
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params_vec.as_slice(), |row| {

@@ -4,10 +4,7 @@ use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue, Message};
 
-use crate::psyop::PsyOp;
-use crate::score::ScoredPost;
-
-use super::json_body;
+use super::{json_body, Subject};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,13 +22,8 @@ pub struct WebSocket {
     pub mode: Mode,
 }
 
-pub async fn send(
-    cfg: &WebSocket,
-    psyop_name: &str,
-    _psyop: &PsyOp,
-    output: &[&ScoredPost],
-) -> Result<(), crate::error::Error> {
-    let payload = render(&cfg.mode, psyop_name, output)?;
+pub async fn send(cfg: &WebSocket, subject: &Subject<'_>) -> Result<(), crate::error::Error> {
+    let payload = render(&cfg.mode, subject)?;
 
     let mut request = cfg.url.as_str().into_client_request()
         .map_err(|e| crate::error::Error::Other(format!("websocket invalid url: {e}")))?;
@@ -61,24 +53,24 @@ pub async fn send(
     Ok(())
 }
 
-fn render(mode: &Mode, psyop_name: &str, output: &[&ScoredPost]) -> Result<String, crate::error::Error> {
+fn render(mode: &Mode, subject: &Subject) -> Result<String, crate::error::Error> {
     let mut s = String::new();
     match mode {
         Mode::Urls => {
-            for tw in output {
-                s.push_str(&format!("https://x.com/{}/status/{}\n", tw.post.handle, tw.post.id));
+            let (_, lines) = json_body::lines(subject);
+            for (_, url) in lines {
+                s.push_str(&url);
+                s.push('\n');
             }
         }
         Mode::UrlsWithScores => {
-            for tw in output {
-                s.push_str(&format!(
-                    "{:.4} — https://x.com/{}/status/{}\n",
-                    tw.score, tw.post.handle, tw.post.id,
-                ));
+            let (_, lines) = json_body::lines(subject);
+            for (label, url) in lines {
+                s.push_str(&format!("{label} — {url}\n"));
             }
         }
         Mode::Json => {
-            let body = json_body::build(psyop_name, output);
+            let body = json_body::build(subject);
             s.push_str(&serde_json::to_string(&body)?);
         }
     }

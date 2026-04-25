@@ -11,6 +11,7 @@ pub mod websocket;
 use serde::{Deserialize, Serialize};
 
 use crate::psyop::PsyOp;
+use crate::scrape::Scrape;
 use crate::score::ScoredPost;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,38 +35,35 @@ pub enum Destination {
     WebSocket(websocket::WebSocket),
 }
 
-pub async fn notify(
-    destinations: &[Destination],
-    psyop_name: &str,
-    psyop: &PsyOp,
-    output: &[&ScoredPost],
-) {
+/// What's being notified about. Destinations format Psyop and Scrape
+/// subjects independently — text-mode renderers print a per-tweet line list
+/// for psyops and a single summary line for scrapes; JSON-mode renderers
+/// emit a tagged Body via `json_body::build`.
+pub enum Subject<'a> {
+    Psyop {
+        name: &'a str,
+        psyop: &'a PsyOp,
+        output: &'a [&'a ScoredPost],
+    },
+    Scrape {
+        name: &'a str,
+        scrape: &'a Scrape,
+        collected: usize,
+    },
+}
+
+pub async fn notify(destinations: &[Destination], subject: Subject<'_>) {
+    let subject_ref = &subject;
     let futs = destinations.iter().map(|dest| async move {
         match dest {
-            Destination::Discord { webhook_url } => {
-                discord::send(webhook_url, psyop_name, psyop, output).await
-            }
-            Destination::Telegram { bot_token, chat_id } => {
-                telegram::send(bot_token, chat_id, psyop_name, psyop, output).await
-            }
-            Destination::Http(cfg) => {
-                http::send(cfg, psyop_name, psyop, output).await
-            }
-            Destination::Stdout(cfg) => {
-                stdout::send(cfg, psyop_name, psyop, output).await
-            }
-            Destination::Stderr(cfg) => {
-                stderr::send(cfg, psyop_name, psyop, output).await
-            }
-            Destination::File(cfg) => {
-                file::send(cfg, psyop_name, psyop, output).await
-            }
-            Destination::Exec(cfg) => {
-                exec::send(cfg, psyop_name, psyop, output).await
-            }
-            Destination::WebSocket(cfg) => {
-                websocket::send(cfg, psyop_name, psyop, output).await
-            }
+            Destination::Discord { webhook_url } => discord::send(webhook_url, subject_ref).await,
+            Destination::Telegram { bot_token, chat_id } => telegram::send(bot_token, chat_id, subject_ref).await,
+            Destination::Http(cfg) => http::send(cfg, subject_ref).await,
+            Destination::Stdout(cfg) => stdout::send(cfg, subject_ref).await,
+            Destination::Stderr(cfg) => stderr::send(cfg, subject_ref).await,
+            Destination::File(cfg) => file::send(cfg, subject_ref).await,
+            Destination::Exec(cfg) => exec::send(cfg, subject_ref).await,
+            Destination::WebSocket(cfg) => websocket::send(cfg, subject_ref).await,
         }
     });
     for result in futures::future::join_all(futs).await {

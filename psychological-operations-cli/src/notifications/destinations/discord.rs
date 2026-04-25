@@ -1,19 +1,13 @@
-use crate::psyop::PsyOp;
-use crate::score::ScoredPost;
+use super::{json_body, Subject};
 
 const MAX_CONTENT_LENGTH: usize = 2000;
 
-pub async fn send(
-    webhook_url: &str,
-    psyop_name: &str,
-    _psyop: &PsyOp,
-    output: &[&ScoredPost],
-) -> Result<(), crate::error::Error> {
-    let header = format!("**PsyOp \"{psyop_name}\"**");
-    let lines: Vec<String> = output.iter().map(|s| format!(
-        "{:.4} — https://x.com/{}/status/{}",
-        s.score, s.post.handle, s.post.id,
-    )).collect();
+pub async fn send(webhook_url: &str, subject: &Subject<'_>) -> Result<(), crate::error::Error> {
+    let (header_plain, items) = json_body::lines(subject);
+    let header = format!("**{header_plain}**");
+    let lines: Vec<String> = items.into_iter()
+        .map(|(label, url)| format!("{label} — {url}"))
+        .collect();
 
     let client = reqwest::Client::new();
     for chunk in split_lines(&header, &lines, MAX_CONTENT_LENGTH) {

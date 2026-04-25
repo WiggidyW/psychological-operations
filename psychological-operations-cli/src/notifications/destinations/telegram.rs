@@ -1,20 +1,20 @@
-use crate::psyop::PsyOp;
-use crate::score::ScoredPost;
+use super::{json_body, Subject};
 
 const MAX_MESSAGE_LENGTH: usize = 4096;
 
 pub async fn send(
     bot_token: &str,
     chat_id: &str,
-    psyop_name: &str,
-    _psyop: &PsyOp,
-    output: &[&ScoredPost],
+    subject: &Subject<'_>,
 ) -> Result<(), crate::error::Error> {
-    let header = format!("*PsyOp \"{psyop_name}\"*");
-    let lines: Vec<String> = output.iter().map(|s| format!(
-        "`{:.4}` — [@{}](https://x.com/{}/status/{})",
-        s.score, s.post.handle, s.post.handle, s.post.id,
-    )).collect();
+    let (header_plain, items) = json_body::lines(subject);
+    let header = format!("*{header_plain}*");
+    // Telegram-flavoured per-line: backtick the score and link the URL with
+    // the handle as anchor when the URL looks like an x.com tweet.
+    let lines: Vec<String> = items.into_iter().map(|(label, url)| {
+        let handle = parse_handle(&url).unwrap_or_else(|| url.clone());
+        format!("`{label}` — [@{handle}]({url})")
+    }).collect();
 
     let url = format!("https://api.telegram.org/bot{bot_token}/sendMessage");
     let client = reqwest::Client::new();
@@ -34,6 +34,13 @@ pub async fn send(
         }
     }
     Ok(())
+}
+
+/// Extract the `<handle>` from `https://x.com/<handle>/status/...`.
+fn parse_handle(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("https://x.com/")?;
+    let (handle, _) = rest.split_once('/')?;
+    Some(handle.to_string())
 }
 
 /// Pack `header` plus per-post `lines` into messages of at most `max_len` chars,
