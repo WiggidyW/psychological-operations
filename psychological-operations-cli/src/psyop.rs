@@ -41,6 +41,10 @@ pub struct Source {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PsyOp {
     pub sources: Vec<Source>,
+    /// Tags applied to every score row this psyop produces. Other psyops
+    /// can then select these scores via their `Source.tag`. Must contain
+    /// at least one tag.
+    pub tags: Vec<String>,
     pub function: FullInlineFunctionOrRemoteCommitOptional,
     pub profile: InlineProfileOrRemoteCommitOptional,
     pub strategy: Strategy,
@@ -80,6 +84,9 @@ impl PsyOp {
     pub fn validate(&self) -> Result<(), crate::error::Error> {
         if self.sources.is_empty() {
             return Err(crate::error::Error::InvalidPsyop("sources must not be empty".into()));
+        }
+        if self.tags.is_empty() {
+            return Err(crate::error::Error::InvalidPsyop("tags must not be empty".into()));
         }
         Ok(())
     }
