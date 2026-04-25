@@ -33,23 +33,55 @@ const tabs: QueryTab[] = [];
 // `retry_unexpected` then re-runs validatePage on each.
 const unexpectedPages: Map<string, Page> = new Map();
 
-async function ensureContext(): Promise<BrowserContext> {
-  if (context !== null) return context;
+// Concurrent scrape runs spawn many Chrome instances at once. Two failure
+// modes emerge under load on Windows:
+//   1. CDP port collision — `findPort` binds→closes, leaving a TOCTOU
+//      window where another concurrent launch can grab the same port.
+//      Chrome then can't bind `--remote-debugging-port` and exits.
+//   2. AV / cold-cache slowness — first-launch chrome scanned by Defender
+//      can blow past Playwright's default 30s launch timeout.
+// Fix: retry with a fresh port and an extended timeout.
+const LAUNCH_TIMEOUT_MS = 120_000;
+const LAUNCH_MAX_ATTEMPTS = 8;
+
+async function launchOnce(): Promise<BrowserContext> {
   cdpPort = await findPort();
-  context = await chromium.launchPersistentContext(userDataDir(), {
+  return chromium.launchPersistentContext(userDataDir(), {
     headless: false,
     channel: "chrome",
+    timeout: LAUNCH_TIMEOUT_MS,
     args: [
       `--remote-debugging-port=${cdpPort}`,
       "--disable-blink-features=AutomationControlled",
     ],
   });
-  // pkg's esbuild wraps our functions with __name(fn, "name") helpers. When
-  // Playwright serializes a function via .toString() to run it in the page,
-  // that wrapping comes along, and __name isn't defined on the page. Shim it
-  // as an identity function so the wrapped code executes normally.
-  await context.addInitScript("globalThis.__name = globalThis.__name || function (fn) { return fn; };");
-  return context;
+}
+
+async function ensureContext(): Promise<BrowserContext> {
+  if (context !== null) return context;
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= LAUNCH_MAX_ATTEMPTS; attempt++) {
+    try {
+      context = await launchOnce();
+      // pkg's esbuild wraps our functions with __name(fn, "name") helpers.
+      // When Playwright serializes a function via .toString() to run it in
+      // the page, that wrapping comes along, and __name isn't defined on
+      // the page. Shim it as an identity function so the wrapped code
+      // executes normally.
+      await context.addInitScript("globalThis.__name = globalThis.__name || function (fn) { return fn; };");
+      return context;
+    } catch (err) {
+      lastErr = err;
+      // Exponential backoff with jitter spreads retries so concurrent
+      // siblings don't all retry on the same beat.
+      const base = Math.min(2000 * attempt, 15_000);
+      const jitter = Math.floor(Math.random() * 2000);
+      await new Promise((r) => setTimeout(r, base + jitter));
+    }
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error(`launch failed after ${LAUNCH_MAX_ATTEMPTS} attempts: ${String(lastErr)}`);
 }
 
 async function validatePage(page: Page): Promise<"results" | "empty" | "unexpected"> {

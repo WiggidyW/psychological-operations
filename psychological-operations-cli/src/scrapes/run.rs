@@ -34,19 +34,11 @@ pub async fn run_all() -> Result<crate::Output, crate::error::Error> {
         }
         let Some(name) = ent.file_name().to_str().map(|s| s.to_string()) else { continue };
 
-        // Resolve disabled flag against (scrape, commit) at enumeration time
-        // so sibling scrapes don't interfere via base-profile mutation.
-        let commit_sha = (|| -> Result<String, git2::Error> {
-            let repo = git2::Repository::open(&path)?;
-            let head = repo.head()?.peel_to_commit()?;
-            Ok(head.id().to_string())
-        })().unwrap_or_default();
-        if cfg.scrapes.get(&name).is_some_and(|o| o.disabled_for(&commit_sha)) {
-            eprintln!("scrape \"{name}\" is disabled for commit {commit_sha}; skipping");
-            continue;
+        match should_run(&name, &cfg) {
+            Ok(true) => targets.push(name),
+            Ok(false) => {}
+            Err(e) => eprintln!("scrape \"{name}\" eligibility check failed: {e}"),
         }
-
-        targets.push(name);
     }
 
     if targets.is_empty() {
@@ -77,6 +69,47 @@ pub async fn run_all() -> Result<crate::Output, crate::error::Error> {
     }
 
     Ok(crate::Output::Empty)
+}
+
+/// Should this scrape be in the run set?
+///   - Disabled (resolved per-commit) → no.
+///   - `count: None` (unlimited) → always yes.
+///   - `count: Some(n)` and at least `n` posts already stored for
+///     `(scrape, commit)` → no, queue is already full.
+///   - Otherwise → yes.
+fn should_run(name: &str, cfg: &crate::config::Config) -> Result<bool, crate::error::Error> {
+    let scrape_dir = crate::config::scrapes_dir().join(name);
+    let scrape_path = scrape_dir.join("scrape.json");
+    if !scrape_path.exists() {
+        return Ok(false);
+    }
+
+    let data = std::fs::read_to_string(&scrape_path)?;
+    let scrape: Scrape = serde_json::from_str(&data)?;
+
+    let commit_sha = {
+        let repo = git2::Repository::open(&scrape_dir)?;
+        let head = repo.head()?.peel_to_commit()?;
+        head.id().to_string()
+    };
+
+    if cfg.scrapes.get(name).is_some_and(|o| o.disabled_for(&commit_sha)) {
+        eprintln!("scrape \"{name}\" is disabled for commit {commit_sha}; skipping");
+        return Ok(false);
+    }
+
+    let Some(target) = scrape.count else {
+        return Ok(true);
+    };
+    let db = crate::db::Db::open()?;
+    let already = db.count_posts_for_scrape(name, &commit_sha)?;
+    if already >= target as usize {
+        eprintln!(
+            "scrape \"{name}\" already at target ({already}/{target}) for commit {commit_sha}; skipping",
+        );
+        return Ok(false);
+    }
+    Ok(true)
 }
 
 /// Run a single scrape end-to-end: snapshot the Chrome profile, drive
@@ -115,9 +148,10 @@ async fn run_scrape(name: &str) -> Result<(), crate::error::Error> {
     }
 
     // Snapshot the base Chrome profile so this scrape can run in parallel
-    // with siblings without sharing a profile lock. The session guard runs
-    // copy-back + cleanup on drop, even on panic.
-    let (_session, profile_dir) = chrome_profile::ProfileSession::begin(name)?;
+    // with siblings without sharing a profile lock. Happy path calls
+    // `session.finalize().await` below; the Drop guard is a sync fallback
+    // for the panic/error path only.
+    let (session, profile_dir) = chrome_profile::ProfileSession::begin(name).await?;
 
     // URL → originating filter map for per-tweet validation.
     let urls_by_filter: Vec<(String, &Filter)> = scrape.filters.iter()
@@ -128,7 +162,7 @@ async fn run_scrape(name: &str) -> Result<(), crate::error::Error> {
         urls_by_filter.iter().map(|(u, f)| (u.as_str(), *f)).collect();
 
     let mut pw = crate::playwright::Playwright::spawn_with_profile(&profile_dir)?;
-    let states = pw.open_tabs(&urls)?;
+    let states = pw.open_tabs(&urls).await?;
 
     // Resolve any "unexpected" URLs via agent intervention, up to
     // max_attempts; whatever's still unexpected after that is dropped.
@@ -142,7 +176,7 @@ async fn run_scrape(name: &str) -> Result<(), crate::error::Error> {
 
     let mut collected = 0;
     while collected < shortfall {
-        let Some((tweet, url)) = pw.next_tweet()? else { break };
+        let Some((tweet, url)) = pw.next_tweet().await? else { break };
         let Some(filter) = filter_by_url.get(url.as_str()).copied() else { continue };
 
         let validation = valid_for_scrape(
@@ -151,7 +185,7 @@ async fn run_scrape(name: &str) -> Result<(), crate::error::Error> {
         );
         if !validation.valid {
             if validation.reason == Some("max_age") {
-                pw.close_query(&url)?;
+                pw.close_query(&url).await?;
             }
             continue;
         }
@@ -174,7 +208,7 @@ async fn run_scrape(name: &str) -> Result<(), crate::error::Error> {
             // that query so we move on to the next filter.
             let prior = db.existing_post_query(&post.id, name, &commit_sha)?;
             if prior.as_deref() == Some(url.as_str()) {
-                pw.close_query(&url)?;
+                pw.close_query(&url).await?;
             }
             continue;
         }
@@ -182,7 +216,7 @@ async fn run_scrape(name: &str) -> Result<(), crate::error::Error> {
         collected += 1;
     }
 
-    pw.close()?;
+    pw.close().await?;
 
     eprintln!("scrape \"{name}\" collected {collected} new posts (commit {commit_sha})");
 
@@ -199,12 +233,17 @@ async fn run_scrape(name: &str) -> Result<(), crate::error::Error> {
         },
     ).await;
 
+    // Async copy-back + cleanup; disarms the Drop guard so it doesn't
+    // re-do the work synchronously when `session` goes out of scope.
+    session.finalize().await;
+
     Ok(())
 }
 
 /// Loop on intervention attempts until every URL has come unstuck or
-/// `max_attempts` is reached. Each attempt fires a notification, blocks on
-/// the TCP listener for the per-scrape `agent_timeout`, then re-validates.
+/// `max_attempts` is reached. Each attempt prints the prompt locally to
+/// stderr (intervention is operator UX, not a remote notification) and
+/// blocks on the TCP listener for the per-scrape `agent_timeout`.
 async fn resolve_interventions(
     name: &str,
     commit_sha: &str,
@@ -214,10 +253,6 @@ async fn resolve_interventions(
     initial_unexpected: Vec<String>,
 ) -> Result<(), crate::error::Error> {
     let (timeout_secs, max_attempts) = intervention::resolve_limits(cfg, name, commit_sha);
-    let mut destinations = cfg.notifications.clone();
-    if let Some(per_scrape) = cfg.scrapes.get(name) {
-        destinations.extend(per_scrape.notifications_for(commit_sha).iter().cloned());
-    }
 
     let mut unresolved = initial_unexpected;
     let mut attempt: u64 = 0;
@@ -225,7 +260,7 @@ async fn resolve_interventions(
         attempt += 1;
         let prompt = build_prompt(name, commit_sha, attempt, max_attempts, &unresolved);
         let outcome = intervention::await_one(
-            name, commit_sha, scrape, &destinations, &prompt, timeout_secs,
+            name, commit_sha, scrape, &prompt, timeout_secs,
         ).await?;
         match outcome {
             InterventionOutcome::Timeout => {
@@ -237,7 +272,7 @@ async fn resolve_interventions(
                 if !reply.is_empty() {
                     eprintln!("scrape \"{name}\" intervention reply: {reply}");
                 }
-                let new_states = pw.retry_unexpected(&unresolved)?;
+                let new_states = pw.retry_unexpected(&unresolved).await?;
                 unresolved.retain(|u| {
                     new_states.get(u).map(|s| s.as_str()) == Some("unexpected")
                 });

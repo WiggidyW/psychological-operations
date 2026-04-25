@@ -6,8 +6,9 @@
 //!   2. Writes two port files atomically:
 //!        - `~/.psychological-operations/agent-<pid>.port` — legacy, by-PID
 //!        - `~/.psychological-operations/agent-scrape-<name>.port` — by-name
-//!   3. Fires a `Subject::Intervention` notification so the user knows
-//!      *which* scrape needs them and what to type.
+//!   3. Prints the prompt to stderr (intervention messages are *local*
+//!      operator UX — they intentionally do NOT fan out to the configured
+//!      notification destinations like discord/telegram/http).
 //!   4. Waits up to `timeout` for `agent reply --scrape <name>` to connect
 //!      and send a line. The reply text itself is informational; the user
 //!      resolves the page by interacting with the visible Chrome window.
@@ -21,7 +22,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
 use crate::config::Config;
-use crate::notifications::destinations::{notify, Subject};
 use crate::scrape::Scrape;
 
 fn agent_dir() -> PathBuf {
@@ -89,15 +89,14 @@ pub fn resolve_limits(cfg: &Config, scrape_name: &str, commit_sha: &str) -> (u64
     (timeout, max_attempts)
 }
 
-/// Run one intervention attempt: write port files, fire notification, wait
-/// up to `timeout_secs` for a single reply on the listener, return the
-/// outcome. The destination list is used only to fire the notification —
-/// the actual blocking happens on the TCP socket, scrape-only.
+/// Run one intervention attempt: write port files, print the prompt to
+/// stderr, wait up to `timeout_secs` for a single reply on the listener,
+/// return the outcome. Intervention prompts intentionally do not fan out
+/// to remote notification destinations — they're local operator UX.
 pub async fn await_one(
     scrape_name: &str,
-    commit_sha: &str,
+    _commit_sha: &str,
     _scrape: &Scrape,
-    destinations: &[crate::notifications::destinations::Destination],
     prompt: &str,
     timeout_secs: u64,
 ) -> Result<InterventionOutcome, crate::error::Error> {
@@ -111,15 +110,7 @@ pub async fn await_one(
     let _guard = PortFileGuard::write(pid, scrape_name, port)
         .map_err(|e| crate::error::Error::Other(format!("intervention port file write failed: {e}")))?;
 
-    notify(
-        destinations,
-        Subject::Intervention {
-            name: scrape_name,
-            commit_sha,
-            pid,
-            prompt,
-        },
-    ).await;
+    eprintln!("{prompt}");
 
     let timeout = Duration::from_secs(timeout_secs);
     match tokio::time::timeout(timeout, listener.accept()).await {

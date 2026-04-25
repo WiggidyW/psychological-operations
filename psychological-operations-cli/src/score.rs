@@ -3,6 +3,7 @@ use objectiveai::functions::{
     FullInlineFunction,
     InlineProfileOrRemoteCommitOptional,
 };
+use objectiveai::functions::executions::request::Strategy;
 use objectiveai::RemotePathCommitOptional;
 use serde::Deserialize;
 
@@ -89,23 +90,69 @@ fn resolve_function(function: &FullInlineFunctionOrRemoteCommitOptional) -> Resu
     }
 }
 
-/// Run a function execution via the CLI. Always passes inline function and profile.
+/// Fetch a fresh function-execution `--instructions-id` from the CLI. The
+/// objectiveai CLI requires this token on every `executions create` call;
+/// it ties a specific execution to the current instructions revision.
+fn fetch_instructions_id() -> Result<String, crate::error::Error> {
+    let output = std::process::Command::new(objectiveai_binary())
+        .args(["functions", "executions", "instructions", "get"])
+        .stdin(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .output()?;
+    if !output.status.success() {
+        return Err(crate::error::Error::ObjectiveAiCli(
+            format!("instructions get failed: {}", String::from_utf8_lossy(&output.stdout)),
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // The CLI prints a long preamble plus a final " Instructions ID: <id>" line.
+    let id = stdout.lines().rev()
+        .find_map(|l| l.trim().strip_prefix("Instructions ID:").map(|s| s.trim().to_string()))
+        .ok_or_else(|| crate::error::Error::ObjectiveAiCli(
+            format!("instructions get returned no ID line: {stdout}"),
+        ))?;
+    Ok(id)
+}
+
+/// Run a function execution via the CLI. Dispatches to either the
+/// `standard` or `swiss-system` subcommand based on the psyop's strategy,
+/// fetches a fresh `--instructions-id` for the call, and always passes the
+/// inline function + profile.
 fn run_function_execution(
     function: &FullInlineFunction,
     profile: &InlineProfileOrRemoteCommitOptional,
+    strategy: &Strategy,
     input_json: &str,
     split: bool,
     invert: bool,
 ) -> Result<ExecutionOutput, crate::error::Error> {
     let function_json = serde_json::to_string(function)?;
     let profile_json = serde_json::to_string(profile)?;
+    let instructions_id = fetch_instructions_id()?;
+
+    let subcommand = match strategy {
+        Strategy::Default => "standard",
+        Strategy::SwissSystem { .. } => "swiss-system",
+    };
 
     let mut args = vec![
-        "functions".to_string(), "executions".to_string(), "create".to_string(), "standard".to_string(),
+        "functions".to_string(), "executions".to_string(), "create".to_string(), subcommand.to_string(),
+        "--instructions-id".to_string(), instructions_id,
         "--function-inline".to_string(), function_json,
         "--profile-inline".to_string(), profile_json,
         "--input-inline".to_string(), input_json.to_string(),
     ];
+
+    if let Strategy::SwissSystem { pool, rounds } = strategy {
+        if let Some(p) = pool {
+            args.push("--pool".to_string());
+            args.push(p.to_string());
+        }
+        if let Some(r) = rounds {
+            args.push("--rounds".to_string());
+            args.push(r.to_string());
+        }
+    }
 
     if split {
         args.push("--split".to_string());
@@ -163,7 +210,7 @@ pub fn score(psyop: &PsyOp, entries: Vec<UnscoredEntry>) -> Result<Vec<ScoredPos
         (serde_json::to_string(&items)?, true)
     };
 
-    let result = run_function_execution(&function, &psyop.profile, &input_json, split, psyop.invert)?;
+    let result = run_function_execution(&function, &psyop.profile, &psyop.strategy, &input_json, split, psyop.invert)?;
 
     let scores: Vec<f64> = result.output.as_array()
         .ok_or_else(|| crate::error::Error::Other("expected array output".into()))?
