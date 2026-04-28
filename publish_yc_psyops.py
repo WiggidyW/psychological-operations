@@ -15,34 +15,16 @@ CLI = REPO / "psychological-operations-cli/target/debug/psychological-operations
 
 # Three-agent swarm we already published. Inlined here as the Auto-profile
 # body so each psyop carries its own copy (Profile.Auto = swarm inline).
-AUTO_PROFILE = {
-    "agents": [
-        {
-            "upstream": "openrouter",
-            "model": "openai/gpt-4o-mini",
-            "output_mode": "json_schema",
-            "top_logprobs": 20,
-            "count": 1,
-        },
-        {
-            "upstream": "claude_agent_sdk",
-            "model": "haiku",
-            "output_mode": "instruction",
-            "count": 1,
-        },
-        {
-            "upstream": "claude_agent_sdk",
-            "model": "sonnet",
-            "output_mode": "instruction",
-            "count": 1,
-        },
-    ],
+PROFILE_REF = {
+    "remote": "filesystem",
+    "owner": "ObjectiveAI",
+    "repository": "gpt-4o-mini-openrouter",
 }
 
 FUNCTION_REF = {
     "remote": "filesystem",
     "owner": "ObjectiveAI",
-    "repository": "unsettlingness-ranker-v",
+    "repository": "unsettlingness-ranker-vii",
 }
 
 STRATEGY = {"type": "swiss_system", "pool": 10, "rounds": 2}
@@ -63,9 +45,10 @@ def main() -> int:
             "sources": [{"tag": slug, "count": 30}],
             "tags": ["yc-unsettling-scored", slug],
             "function": FUNCTION_REF,
-            "profile": AUTO_PROFILE,
+            "profile": PROFILE_REF,
             "strategy": STRATEGY,
             "count": 10,
+            "videos": False,
         }
         body = json.dumps(psyop)
         msg = f"publish {name} (score yc-unsettling tweets via unsettlingness-ranker swarm)"
