@@ -6,41 +6,30 @@ import { parseTweet, type TweetData } from "./tweet.js";
 import { findPort } from "./port.js";
 
 function userDataDir(): string {
-  // POPS_CHROME_DATA_DIR is set by `Playwright::spawn_with_profile` so each
-  // concurrent scrape can run against an isolated snapshot of the shared
-  // base profile (concurrent launchPersistentContext on the same dir would
-  // fight over Chrome's profile lock).
-  const override_ = process.env["POPS_CHROME_DATA_DIR"];
-  if (override_ && override_.length > 0) return override_;
   return path.join(os.homedir(), ".psychological-operations", "chrome-data");
 }
 
 let context: BrowserContext | null = null;
 let cdpPort: number | null = null;
+// Single shared page for the entire scrapes-run process. Opened once at
+// `start_session`, reused for every typed search.
+let page: Page | null = null;
 
-interface QueryTab {
+interface QueryState {
   query: string;
-  page: Page;
   buffer: TweetData[];
   seen: Set<string>;
   open: boolean;
   staleScrolls: number;
 }
 
-const tabs: QueryTab[] = [];
-// Pages that came back "unexpected" from open_tabs. Kept around so the user
-// can resolve the issue (login, captcha, etc.) in the visible Chrome window;
-// `retry_unexpected` then re-runs validatePage on each.
-const unexpectedPages: Map<string, Page> = new Map();
+// At most one active query at a time (sequential model).
+let current: QueryState | null = null;
 
-// Concurrent scrape runs spawn many Chrome instances at once. Two failure
-// modes emerge under load on Windows:
-//   1. CDP port collision — `findPort` binds→closes, leaving a TOCTOU
-//      window where another concurrent launch can grab the same port.
-//      Chrome then can't bind `--remote-debugging-port` and exits.
-//   2. AV / cold-cache slowness — first-launch chrome scanned by Defender
-//      can blow past Playwright's default 30s launch timeout.
-// Fix: retry with a fresh port and an extended timeout.
+// AV / cold-cache slowness: first-launch chrome scanned by Defender can blow
+// past Playwright's default 30s launch timeout. We launch exactly once per
+// `scrapes run` process now, but keep the retry / extended timeout for
+// robustness.
 const LAUNCH_TIMEOUT_MS = 120_000;
 const LAUNCH_MAX_ATTEMPTS = 8;
 
@@ -72,8 +61,6 @@ async function ensureContext(): Promise<BrowserContext> {
       return context;
     } catch (err) {
       lastErr = err;
-      // Exponential backoff with jitter spreads retries so concurrent
-      // siblings don't all retry on the same beat.
       const base = Math.min(2000 * attempt, 15_000);
       const jitter = Math.floor(Math.random() * 2000);
       await new Promise((r) => setTimeout(r, base + jitter));
@@ -84,150 +71,151 @@ async function ensureContext(): Promise<BrowserContext> {
     : new Error(`launch failed after ${LAUNCH_MAX_ATTEMPTS} attempts: ${String(lastErr)}`);
 }
 
-async function validatePage(page: Page): Promise<"results" | "empty" | "unexpected"> {
+async function validatePage(p: Page): Promise<"results" | "empty" | "unexpected"> {
   // Wait up to 15s for an article to appear. X has persistent connections, so
   // networkidle never fires — we can't rely on it as a fallback.
   try {
-    await page.locator("article").first().waitFor({ timeout: 15_000 });
+    await p.locator("article").first().waitFor({ timeout: 15_000 });
     return "results";
   } catch {
-    const noResults = await page.getByText(/No results for/).first().isVisible().catch(() => false);
+    const noResults = await p.getByText(/No results for/).first().isVisible().catch(() => false);
     if (noResults) return "empty";
     return "unexpected";
   }
 }
 
-async function refillBuffer(tab: QueryTab): Promise<void> {
-  const articles = tab.page.locator("article");
+async function refillBuffer(state: QueryState): Promise<void> {
+  if (page === null) return;
+  const articles = page.locator("article");
   const count = await articles.count();
   for (let i = 0; i < count; i++) {
     const tweet = await parseTweet(articles.nth(i));
-    if (!tweet || tab.seen.has(tweet.id)) continue;
-    tab.seen.add(tweet.id);
-    tab.buffer.push(tweet);
+    if (!tweet || state.seen.has(tweet.id)) continue;
+    state.seen.add(tweet.id);
+    state.buffer.push(tweet);
   }
 }
 
-async function scrollTab(tab: QueryTab): Promise<void> {
-  await tab.page.evaluate(() => window.scrollBy(0, window.innerHeight * 2));
-  await tab.page.waitForTimeout(2000);
+async function scrollPage(): Promise<void> {
+  if (page === null) return;
+  await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2));
+  await page.waitForTimeout(2000);
+}
+
+// ── Typed search helpers ────────────────────────────────────────────────────
+
+const SEARCH_INPUT_SELECTORS = [
+  '[data-testid="SearchBox_Search_Input"]',
+  'input[role="combobox"][placeholder*="Search"]',
+];
+
+async function focusSearchInput(): Promise<void> {
+  if (page === null) throw new Error("session not started");
+  for (const sel of SEARCH_INPUT_SELECTORS) {
+    const loc = page.locator(sel).first();
+    if (await loc.isVisible().catch(() => false)) {
+      await loc.click({ clickCount: 3 }); // triple-click selects existing text
+      await page.keyboard.press("Backspace");
+      await loc.focus();
+      return;
+    }
+  }
+  throw new Error(`search input not found (tried: ${SEARCH_INPUT_SELECTORS.join(", ")})`);
+}
+
+async function typeWithJitter(text: string): Promise<void> {
+  if (page === null) throw new Error("session not started");
+  for (const ch of text) {
+    const delay = 50 + Math.floor(Math.random() * 100); // 50–150ms per char
+    await page.keyboard.type(ch, { delay });
+  }
+}
+
+async function clickLatestTab(): Promise<void> {
+  if (page === null) return;
+  // Best-effort: try a few selectors; if none match (already on Latest, or
+  // X UI churn), validatePage will report results regardless.
+  const candidates = [
+    'a[role="tab"]:has-text("Latest")',
+    '[href*="f=live"][role="tab"]',
+  ];
+  for (const sel of candidates) {
+    const loc = page.locator(sel).first();
+    if (await loc.isVisible().catch(() => false)) {
+      await loc.click().catch(() => undefined);
+      // Allow the timeline to swap.
+      await page.waitForTimeout(1500);
+      return;
+    }
+  }
 }
 
 // ── Command handlers ────────────────────────────────────────────────────────
 
-async function openTabs(urls: string[]): Promise<Record<string, string>> {
+async function startSession(): Promise<void> {
   const ctx = await ensureContext();
-  const results: Record<string, string> = {};
-
-  for (const url of urls) {
-    const page = await ctx.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-    const state = await validatePage(page);
-    results[url] = state;
-
-    if (state === "empty") {
-      await page.close();
-      continue;
-    }
-    if (state === "unexpected") {
-      // Keep the page open so the user can resolve the issue manually; the
-      // Rust side will call retry_unexpected after agent intervention.
-      unexpectedPages.set(url, page);
-      continue;
-    }
-
-    // Use the URL as the tab's stable identifier; the Rust caller maps it
-    // back to the originating filter for validation.
-    tabs.push({ query: url, page, buffer: [], seen: new Set(), open: true, staleScrolls: 0 });
-  }
-
-  // Close default blank tab
-  const defaultPage = ctx.pages()[0];
-  if (defaultPage && !tabs.some((t) => t.page === defaultPage)) {
-    await defaultPage.close();
-  }
-
-  return results;
+  if (page !== null) return;
+  page = await ctx.newPage();
+  await page.goto("https://x.com/home", { waitUntil: "domcontentloaded" });
+  // Close any leftover blank tab.
+  const defaultPage = ctx.pages().find((p) => p !== page);
+  if (defaultPage) await defaultPage.close().catch(() => undefined);
+  // Wait for the search input to be present so subsequent run_query calls
+  // don't race the UI.
+  await page.locator(SEARCH_INPUT_SELECTORS[0]!).first().waitFor({ timeout: 30_000 }).catch(() => undefined);
 }
 
-function pickNewest(): { tab: QueryTab; tweet: TweetData } | null {
-  let best: { tab: QueryTab; tweet: TweetData } | null = null;
-  for (const tab of tabs) {
-    if (!tab.open || tab.buffer.length === 0) continue;
-    const tweet = tab.buffer[0]!;
-    if (!best || tweet.created > best.tweet.created) {
-      best = { tab, tweet };
-    }
+async function runQuery(query: string): Promise<"results" | "empty" | "unexpected"> {
+  if (page === null) throw new Error("session not started — call start_session first");
+  // Always reset visible scroll before re-typing so search bar is in view.
+  await page.evaluate(() => window.scrollTo(0, 0)).catch(() => undefined);
+  try {
+    await focusSearchInput();
+  } catch {
+    return "unexpected";
   }
-  return best;
+  await typeWithJitter(query);
+  await page.keyboard.press("Enter");
+  // Wait for navigation/results to settle. X uses client-side routing so
+  // load events may not fire; just give the URL/timeline time to swap.
+  await page.waitForTimeout(2000);
+  await clickLatestTab();
+  const state = await validatePage(page);
+  if (state === "results") {
+    current = { query, buffer: [], seen: new Set(), open: true, staleScrolls: 0 };
+  } else {
+    current = null;
+  }
+  return state;
 }
 
 async function nextTweet(): Promise<{ tweet: TweetData; query: string } | null> {
-  // Refill empty buffers
-  for (const tab of tabs) {
-    if (!tab.open || tab.buffer.length > 0) continue;
-    await refillBuffer(tab);
-    if (tab.buffer.length === 0) {
-      await scrollTab(tab);
-      await refillBuffer(tab);
-      if (tab.buffer.length === 0) {
-        tab.staleScrolls++;
-        if (tab.staleScrolls >= 5) {
-          tab.open = false;
+  if (current === null || !current.open) return null;
+  if (current.buffer.length === 0) {
+    await refillBuffer(current);
+    if (current.buffer.length === 0) {
+      await scrollPage();
+      await refillBuffer(current);
+      if (current.buffer.length === 0) {
+        current.staleScrolls++;
+        if (current.staleScrolls >= 5) {
+          current.open = false;
+          return null;
         }
       } else {
-        tab.staleScrolls = 0;
+        current.staleScrolls = 0;
       }
     } else {
-      tab.staleScrolls = 0;
+      current.staleScrolls = 0;
     }
   }
-
-  const pick = pickNewest();
-  if (!pick) return null;
-
-  pick.tab.buffer.shift();
-  return { tweet: pick.tweet, query: pick.tab.query };
+  const tweet = current.buffer.shift();
+  if (tweet === undefined) return null;
+  return { tweet, query: current.query };
 }
 
-function closeQuery(query: string): void {
-  const tab = tabs.find((t) => t.query === query);
-  if (tab) tab.open = false;
-}
-
-async function retryUnexpected(urls: string[]): Promise<Record<string, string>> {
-  const results: Record<string, string> = {};
-  for (const url of urls) {
-    const page = unexpectedPages.get(url);
-    if (!page) {
-      results[url] = "unexpected";
-      continue;
-    }
-    // Re-navigate to the original URL in case the user wandered off (e.g.,
-    // logged in via a redirect chain that landed on home). Then revalidate.
-    try {
-      await page.goto(url, { waitUntil: "domcontentloaded" });
-    } catch {
-      // Navigation failure → still treat as unexpected so the runner can
-      // retry intervention.
-      results[url] = "unexpected";
-      continue;
-    }
-    const state = await validatePage(page);
-    results[url] = state;
-    if (state === "results") {
-      unexpectedPages.delete(url);
-      tabs.push({ query: url, page, buffer: [], seen: new Set(), open: true, staleScrolls: 0 });
-    } else if (state === "empty") {
-      unexpectedPages.delete(url);
-      await page.close();
-    }
-  }
-  return results;
-}
-
-function hasOpenTabs(): boolean {
-  return tabs.some((t) => t.open);
+function closeCurrent(): void {
+  current = null;
 }
 
 async function close(): Promise<void> {
@@ -236,16 +224,22 @@ async function close(): Promise<void> {
     context = null;
     cdpPort = null;
   }
-  tabs.length = 0;
-  unexpectedPages.clear();
+  page = null;
+  current = null;
 }
 
 // ── Protocol dispatch ───────────────────────────────────────────────────────
 
 export async function handleCommand(cmd: Record<string, unknown>): Promise<unknown> {
   switch (cmd["cmd"]) {
-    case "open_tabs":
-      return { states: await openTabs(cmd["urls"] as string[]) };
+    case "start_session":
+      await startSession();
+      return { ok: true };
+
+    case "run_query": {
+      const state = await runQuery(cmd["query"] as string);
+      return { state };
+    }
 
     case "next_tweet": {
       const result = await nextTweet();
@@ -254,18 +248,12 @@ export async function handleCommand(cmd: Record<string, unknown>): Promise<unkno
     }
 
     case "close_query":
-      closeQuery(cmd["query"] as string);
+      closeCurrent();
       return { ok: true };
-
-    case "retry_unexpected":
-      return { states: await retryUnexpected(cmd["urls"] as string[]) };
-
-    case "has_open_tabs":
-      return { open: hasOpenTabs() };
 
     case "start_mcp": {
       if (cdpPort === null) {
-        return { error: "browser not started — call open_tabs first" };
+        return { error: "browser not started — call start_session first" };
       }
       const port = await startMcpServer(cdpPort);
       return { mcp_port: port };
@@ -275,11 +263,8 @@ export async function handleCommand(cmd: Record<string, unknown>): Promise<unkno
       stopMcpServer();
       return { ok: true };
 
-    case "get_page_url": {
-      const query = cmd["query"] as string;
-      const tab = tabs.find((t) => t.query === query);
-      return { url: tab?.page.url() ?? null };
-    }
+    case "get_page_url":
+      return { url: page?.url() ?? null };
 
     case "install_browser": {
       try {

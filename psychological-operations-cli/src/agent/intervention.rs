@@ -1,5 +1,11 @@
 //! Pause-and-wait-for-the-user intervention used by `scrapes run` when a
-//! filter URL comes back as `unexpected` (login wall, captcha, etc.).
+//! typed search lands on an unexpected page state (login wall, captcha,
+//! checkpoint, etc.).
+//!
+//! With the single-session sequential scraper there is at most one paused
+//! scrape at any moment — the per-scrape port file naming is still
+//! meaningful, since it tells the operator which scrape's filter is
+//! currently waiting.
 //!
 //! Each invocation:
 //!   1. Spawns a one-shot TCP listener on `127.0.0.1:0`.
@@ -12,6 +18,7 @@
 //!   4. Waits up to `timeout` for `agent reply --scrape <name>` to connect
 //!      and send a line. The reply text itself is informational; the user
 //!      resolves the page by interacting with the visible Chrome window.
+//!      On reply the caller re-types the failing query into the search bar.
 //!   5. Cleans up both port files via a `Drop` guard so a panicking caller
 //!      doesn't leave stale files behind.
 

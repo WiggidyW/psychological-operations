@@ -1,7 +1,6 @@
 pub mod notifications;
 pub mod agent_timeout;
 pub mod agent_max_attempts;
-pub mod chrome_profile;
 pub mod run;
 
 use clap::{Args, Subcommand};
