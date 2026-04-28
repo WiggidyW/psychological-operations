@@ -1,10 +1,9 @@
 #[tokio::main]
 async fn main() {
-    match psychological_operations_cli::run().await {
+    match psychological_operations_cli::run(std::env::args_os()).await {
         Ok(output) => {
-            let s = output.to_string();
-            if !s.is_empty() {
-                println!("{s}");
+            if !output.is_empty() {
+                println!("{output}");
             }
         }
         Err(e) => {

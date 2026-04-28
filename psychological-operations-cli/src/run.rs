@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 
 use crate::agent;
-use crate::error;
 use crate::invent;
 use crate::notifications;
 use crate::psyops;
@@ -74,9 +73,13 @@ impl std::fmt::Display for Output {
     }
 }
 
-pub async fn run() -> Result<Output, error::Error> {
-    let cli = Cli::parse();
-    match cli.command {
+pub async fn run<I, T>(args: I) -> Result<String, String>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let cli = Cli::try_parse_from(args).map_err(|e| e.to_string())?;
+    let output = match cli.command {
         Commands::Psyops { command } => command.handle().await,
         Commands::Scrapes { command } => command.handle().await,
         Commands::Notifications { command } => command.handle(),
@@ -85,4 +88,6 @@ pub async fn run() -> Result<Output, error::Error> {
         Commands::Invent { command } => command.handle(),
         Commands::Agent { command } => command.handle().await,
     }
+    .map_err(|e| e.to_string())?;
+    Ok(output.to_string())
 }

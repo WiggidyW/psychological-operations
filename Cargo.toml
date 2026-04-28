@@ -1,0 +1,9 @@
+[workspace]
+resolver = "3"
+members = [
+    "psychological-operations-cli",
+    "psychological-operations-mcp",
+]
+exclude = [
+    "objectiveai",
+]
