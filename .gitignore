@@ -4,3 +4,4 @@ dist/
 .claude/
 target/
 embed/
+.logs/
