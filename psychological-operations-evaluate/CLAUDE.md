@@ -1,24 +1,48 @@
 # psychological-operations-evaluate
 
-Evaluation pipelines for `psychological-operations` built on
-[ObjectiveAI](https://objectiveai.dev) and
-[cocoindex](https://github.com/cocoindex-io/cocoindex).
+PyInstaller-bundled runner that packages
+[`objectiveai`](https://objectiveai.dev),
+[`cocoindex`](https://github.com/cocoindex-io/cocoindex), and
+[`objectiveai-cocoindex`](https://github.com/ObjectiveAI/objectiveai)
+(plus their transitive deps) into a single self-contained executable
+per target/profile. Mirrors the build pipeline of
+`objectiveai/objectiveai-claude-agent-sdk-runner/`.
 
-## Dependencies
+## Build
 
-Canonical declaration is in `pyproject.toml` `[project.dependencies]`:
+```bash
+bash psychological-operations-evaluate/build.sh                          # debug, host target
+bash psychological-operations-evaluate/build.sh --release                # release, host target
+bash psychological-operations-evaluate/build.sh --target <triple>        # cross-target metadata only
 ```
-objectiveai==2.0.1
-cocoindex
-objectiveai-cocoindex==2.0.1
-```
-`requirements.txt` mirrors the same pins (kept for callers that
-`pip install -r requirements.txt` directly).
 
-`build.sh` installs straight from PyPI — there is no sibling-source
-redirect (unlike `objectiveai/objectiveai-cocoindex/build.sh`), since
-the `objectiveai*` packages live in the submodule rather than as
-sibling crates of this package.
+`build.sh` is fingerprint-driven: if `main.py`, `requirements.txt`, and
+`requirements-dev.txt` are all unchanged from the last successful
+build, PyInstaller is skipped. Logs land in
+`.logs/build/psychological-operations-evaluate.txt`.
+
+## Output
+
+```
+psychological-operations-evaluate/embed/<target>/<profile>/
+├── .fingerprint
+└── psychological-operations-evaluate[.exe]
+```
+
+`<target>` is the Rust target triple (auto-detected via `rustc -vV`
+unless `--target` is passed). `<profile>` is `debug` or `release`.
+
+## Validate
+
+```bash
+bash psychological-operations-evaluate/validate.sh [--release] [--target <triple>]
+```
+
+Exits 0 if `embed/<target>/<profile>/` is present and its fingerprint
+matches the current source. Exits 1 if the embed directory is missing
+and 2 if the fingerprint is stale. Designed for use by a future Rust
+`build.rs` consumer (see `psychological-operations-cli/build.rs` for
+the playwright equivalent).
 
 ## Virtual Environment
 
@@ -32,19 +56,4 @@ psychological-operations-evaluate/venv/Scripts/pip.exe <args>
 # Linux/macOS
 psychological-operations-evaluate/venv/bin/python <args>
 psychological-operations-evaluate/venv/bin/pip <args>
-```
-
-## Build
-
-```bash
-bash psychological-operations-evaluate/build.sh
-```
-
-Creates the venv (if missing) and installs `requirements.txt` + `requirements-dev.txt`.
-
-## Tests
-
-```bash
-bash psychological-operations-evaluate/test.sh
-bash psychological-operations-evaluate/test.sh -- -k foo -vv
 ```

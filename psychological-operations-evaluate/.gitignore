@@ -1,13 +1,6 @@
 venv/
+embed/
+.pyinstaller-work/
 __pycache__/
 *.pyc
 *.pyo
-*.egg-info/
-dist/
-build/
-.eggs/
-.pytest_cache/
-
-# Staged at build time — copied from repo root, not tracked here.
-/LICENSE
-/README.md
