@@ -10,8 +10,7 @@ pub mod websocket;
 
 use serde::{Deserialize, Serialize};
 
-use crate::psyop::PsyOp;
-use crate::scrape::Scrape;
+use crate::psyops::PsyOp;
 use crate::score::ScoredPost;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

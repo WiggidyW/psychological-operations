@@ -1,7 +1,6 @@
 pub mod error;
 pub mod config;
 pub mod db;
-pub mod psyop;
 pub mod input;
 pub mod score;
 pub mod notifications;

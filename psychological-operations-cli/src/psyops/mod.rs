@@ -1,10 +1,18 @@
 pub mod notifications;
 pub mod run;
 
+pub mod psyop;
+pub mod query;
+pub mod for_you;
+
+pub use psyop::*;
+pub use query::*;
+pub use for_you::*;
+
 use clap::{Args, Subcommand};
 use serde::Serialize;
 
-use crate::psyop::PsyOp;
+use self::psyop::PsyOp;
 
 #[derive(Subcommand)]
 pub enum Commands {

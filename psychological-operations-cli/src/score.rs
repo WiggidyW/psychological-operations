@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::db::{Post, UnscoredEntry};
 use crate::input::{new_post_input_value, PostsInputValue, PostInputValue};
-use crate::psyop::{PsyOp, is_vector_function};
+use crate::psyops::{PsyOp, is_vector_function};
 
 #[derive(Clone)]
 pub struct ScoredPost {
