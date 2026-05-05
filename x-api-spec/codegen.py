@@ -1,0 +1,905 @@
+#!/usr/bin/env python3
+"""Codegen: X API v2 OpenAPI spec -> psychological-operations-cli/src/x/.
+
+Reads x-api-spec/openapi.json (sha256-verified against
+openapi.meta.json), emits Rust serde types in a path-mirrored layout.
+
+Usage:
+    python x-api-spec/codegen.py
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import shutil
+import sys
+from pathlib import Path
+from typing import Any
+
+SCRIPT_DIR = Path(__file__).parent.resolve()
+REPO_ROOT = SCRIPT_DIR.parent
+SPEC_PATH = SCRIPT_DIR / "openapi.json"
+META_PATH = SCRIPT_DIR / "openapi.meta.json"
+OUT_DIR = REPO_ROOT / "psychological-operations-cli" / "src" / "x"
+
+RUST_KEYWORDS = {
+    "as", "break", "const", "continue", "crate", "else", "enum", "extern",
+    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod",
+    "move", "mut", "pub", "ref", "return", "self", "Self", "static", "struct",
+    "super", "trait", "true", "type", "unsafe", "use", "where", "while",
+    "async", "await", "dyn", "abstract", "become", "box", "do", "final",
+    "macro", "override", "priv", "typeof", "unsized", "virtual", "yield",
+    "try", "union",
+}
+
+
+# ---- name helpers ---------------------------------------------------------
+
+
+def to_snake(name: str) -> str:
+    """PascalCase / camelCase / dotted / hyphenated -> snake_case."""
+    s = re.sub(r"[.\-/]", "_", name)
+    s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s)
+    s = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", s)
+    return s.lower()
+
+
+def to_pascal(name: str) -> str:
+    parts = re.split(r"[_\-./]", name)
+    return "".join(p[:1].upper() + p[1:] for p in parts if p)
+
+
+def safe_field(name: str) -> tuple[str, str | None]:
+    """Return (rust_ident, serde_rename_or_None)."""
+    snake = to_snake(name)
+    rename = name if snake != name else None
+    if snake in RUST_KEYWORDS:
+        snake = snake + "_"
+        rename = name
+    return snake, rename
+
+
+def safe_type_name(name: str) -> str:
+    """Sanitize a schema name into a valid Rust type identifier."""
+    s = re.sub(r"[^A-Za-z0-9_]", "_", name)
+    if s and s[0].isdigit():
+        s = "_" + s
+    if s in RUST_KEYWORDS:
+        s = s + "_"
+    return s
+
+
+# ---- spec loading ---------------------------------------------------------
+
+
+def load_spec() -> tuple[dict, str]:
+    raw = SPEC_PATH.read_bytes()
+    sha = hashlib.sha256(raw).hexdigest()
+    meta = json.loads(META_PATH.read_text())
+    if meta.get("sha256") != sha:
+        sys.exit(f"sha256 mismatch: openapi.json={sha} meta={meta.get('sha256')}")
+    spec = json.loads(raw)
+    return spec, sha
+
+
+# ---- type resolution ------------------------------------------------------
+
+
+class Codegen:
+    def __init__(self, spec: dict, sha: str):
+        self.spec = spec
+        self.sha = sha
+        self.schemas: dict[str, dict] = spec["components"]["schemas"]
+        self.parameters: dict[str, dict] = spec["components"].get("parameters", {})
+        self.kinds: dict[str, str] = {}     # schema_name -> kind
+        self.classify()
+        self.emitted_types: set[str] = set()
+        self.lifted_types: dict[str, list[tuple[str, dict]]] = {}  # parent_file -> [(name, schema)]
+
+    # -- classification -----------------------------------------------------
+
+    def classify(self) -> None:
+        for name, s in self.schemas.items():
+            self.kinds[name] = self._kind_of(s)
+
+    def _kind_of(self, s: dict) -> str:
+        if "$ref" in s:
+            return "alias"
+        if "oneOf" in s:
+            return "tagged_union" if "discriminator" in s else "untagged_union"
+        if "anyOf" in s:
+            return "untagged_union"
+        if "allOf" in s:
+            return "inherited"
+        t = s.get("type")
+        if "enum" in s and t == "string":
+            return "enum_string"
+        if t == "string" or t == "integer" or t == "number" or t == "boolean":
+            return "newtype"
+        if t == "array":
+            return "alias_array"
+        if t == "object" or "properties" in s or "additionalProperties" in s:
+            return "struct"
+        return "opaque"  # fallback -> serde_json::Value
+
+    # -- ref helpers --------------------------------------------------------
+
+    @staticmethod
+    def ref_name(ref: str) -> str:
+        return ref.split("/")[-1]
+
+    def resolve_schema_ref(self, ref: str) -> dict:
+        return self.schemas[self.ref_name(ref)]
+
+    # -- type expression for any schema -------------------------------------
+
+    def rust_type(self, schema: dict, hint: str = "Inline", parent_file: str | None = None) -> str:
+        """Translate a schema into a Rust type expression. May lift inline
+        objects/enums into the parent file under a generated PascalCase name.
+
+        hint: name to use if we need to lift this schema as a sibling type.
+        parent_file: file (without extension) the lifted type should belong to.
+        """
+        if not schema:
+            return "serde_json::Value"
+        if "$ref" in schema:
+            return safe_type_name(self.ref_name(schema["$ref"]))
+        if "oneOf" in schema or "anyOf" in schema or "allOf" in schema:
+            # lift to a sibling type
+            return self._lift(schema, hint, parent_file)
+        t = schema.get("type")
+        if t == "string":
+            if "enum" in schema:
+                return self._lift(schema, hint, parent_file)
+            fmt = schema.get("format")
+            if fmt == "date-time":
+                return "chrono::DateTime<chrono::Utc>"
+            if fmt == "date":
+                return "chrono::NaiveDate"
+            if fmt == "uri":
+                return "url::Url"
+            return "String"
+        if t == "integer":
+            fmt = schema.get("format")
+            if fmt == "int64":
+                return "i64"
+            return "i32"
+        if t == "number":
+            fmt = schema.get("format")
+            return "f64" if fmt == "double" else "f32" if fmt == "float" else "f64"
+        if t == "boolean":
+            return "bool"
+        if t == "array":
+            inner = self.rust_type(schema.get("items", {}), hint + "Item", parent_file)
+            return f"Vec<{inner}>"
+        if t == "object" or "properties" in schema or "additionalProperties" in schema:
+            ap = schema.get("additionalProperties")
+            if "properties" in schema and schema["properties"]:
+                return self._lift(schema, hint, parent_file)
+            if ap is True or ap is None:
+                return "std::collections::HashMap<String, serde_json::Value>"
+            if isinstance(ap, dict):
+                inner = self.rust_type(ap, hint + "Value", parent_file)
+                return f"std::collections::HashMap<String, {inner}>"
+            return "serde_json::Value"
+        return "serde_json::Value"
+
+    def _lift(self, schema: dict, hint: str, parent_file: str | None) -> str:
+        """Register an inline schema for emission inside parent_file (or as
+        an Inline type within the calling file). Returns the chosen name."""
+        name = safe_type_name(hint)
+        bucket = self.lifted_types.setdefault(parent_file or "_inline", [])
+        # Avoid duplicates by name within the same bucket.
+        existing = {n for n, _ in bucket}
+        candidate = name
+        i = 1
+        while candidate in existing:
+            i += 1
+            candidate = f"{name}{i}"
+        bucket.append((candidate, schema))
+        return candidate
+
+    # -- emitters: components ----------------------------------------------
+
+    def emit_components(self) -> None:
+        types_dir = OUT_DIR / "types"
+        types_dir.mkdir(parents=True, exist_ok=True)
+
+        # batch newtypes + aliases + enum_string by kind into shared files
+        newtypes: list[tuple[str, dict]] = []
+        aliases: list[tuple[str, dict]] = []
+        enums_string: list[tuple[str, dict]] = []
+        complex_schemas: list[tuple[str, dict]] = []
+
+        for name in sorted(self.schemas):
+            s = self.schemas[name]
+            kind = self.kinds[name]
+            if kind == "newtype":
+                newtypes.append((name, s))
+            elif kind in ("alias", "alias_array"):
+                aliases.append((name, s))
+            elif kind == "enum_string":
+                enums_string.append((name, s))
+            else:
+                complex_schemas.append((name, s))
+
+        # newtypes.rs
+        self._emit_newtypes_file(types_dir / "newtypes.rs", newtypes)
+        # aliases.rs
+        self._emit_aliases_file(types_dir / "aliases.rs", aliases)
+        # enums.rs  (top-level string enum schemas)
+        self._emit_enums_file(types_dir / "enums.rs", enums_string)
+
+        # one file per complex schema
+        complex_names: list[str] = []
+        for name, s in complex_schemas:
+            file_stem = to_snake(name)
+            path = types_dir / f"{file_stem}.rs"
+            self._emit_complex_schema_file(path, name, s, file_stem)
+            complex_names.append(file_stem)
+
+        # types/mod.rs — re-export everything under one namespace
+        all_complex_types = sorted(safe_type_name(n) for n, _ in complex_schemas)
+        all_newtype_names = sorted(safe_type_name(n) for n, _ in newtypes)
+        all_alias_names = sorted(safe_type_name(n) for n, _ in aliases)
+        all_enum_names = sorted(safe_type_name(n) for n, _ in enums_string)
+
+        with (types_dir / "mod.rs").open("w", encoding="utf-8", newline="\n") as f:
+            f.write(self._header())
+            f.write("pub mod newtypes;\n")
+            f.write("pub mod aliases;\n")
+            f.write("pub mod enums;\n")
+            for stem in sorted(complex_names):
+                f.write(f"pub mod {stem};\n")
+            f.write("\n")
+            f.write("pub use newtypes::*;\n")
+            f.write("pub use aliases::*;\n")
+            f.write("pub use enums::*;\n")
+            for stem in sorted(complex_names):
+                f.write(f"pub use {stem}::*;\n")
+
+    def _emit_newtypes_file(self, path: Path, items: list[tuple[str, dict]]) -> None:
+        with path.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(self._header())
+            f.write("use serde::{Deserialize, Serialize};\n\n")
+            for name, s in items:
+                inner = self._primitive_inner(s)
+                self._doc(f, s.get("description"))
+                f.write("#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]\n")
+                f.write("#[serde(transparent)]\n")
+                f.write(f"pub struct {safe_type_name(name)}(pub {inner});\n\n")
+
+    def _primitive_inner(self, s: dict) -> str:
+        t = s.get("type")
+        if t == "string":
+            return "String"
+        if t == "integer":
+            return "i64" if s.get("format") == "int64" else "i32"
+        if t == "number":
+            return "f64"
+        if t == "boolean":
+            return "bool"
+        return "String"
+
+    def _emit_aliases_file(self, path: Path, items: list[tuple[str, dict]]) -> None:
+        with path.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(self._header())
+            f.write("#[allow(unused_imports)]\nuse serde::{Deserialize, Serialize};\n")
+            f.write("#[allow(unused_imports)]\nuse super::*;\n\n")
+            for name, s in items:
+                self._doc(f, s.get("description"))
+                if "$ref" in s:
+                    target = safe_type_name(self.ref_name(s["$ref"]))
+                    f.write(f"pub type {safe_type_name(name)} = {target};\n\n")
+                elif s.get("type") == "array":
+                    inner = self.rust_type(s.get("items", {}))
+                    f.write(f"pub type {safe_type_name(name)} = Vec<{inner}>;\n\n")
+
+    def _emit_enums_file(self, path: Path, items: list[tuple[str, dict]]) -> None:
+        with path.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(self._header())
+            f.write("use serde::{Deserialize, Serialize};\n\n")
+            for name, s in items:
+                self._emit_string_enum(f, safe_type_name(name), s)
+
+    def _emit_string_enum(self, f, type_name: str, schema: dict) -> None:
+        self._doc(f, schema.get("description"))
+        f.write("#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]\n")
+        f.write(f"pub enum {type_name} {{\n")
+        for v in schema.get("enum", []):
+            variant = to_pascal(re.sub(r"[^A-Za-z0-9]+", "_", str(v)).strip("_"))
+            if not variant:
+                variant = "Empty"
+            if variant[0].isdigit():
+                variant = "_" + variant
+            if variant in RUST_KEYWORDS:
+                variant = variant + "_"
+            f.write(f"    #[serde(rename = {json.dumps(v)})]\n")
+            f.write(f"    {variant},\n")
+        f.write("}\n\n")
+
+    # -- complex schema (object / allOf / oneOf / anyOf) --------------------
+
+    def _emit_complex_schema_file(self, path: Path, name: str, schema: dict, file_stem: str) -> None:
+        self.lifted_types.pop(file_stem, None)
+        body_lines: list[str] = []
+
+        kind = self.kinds[name]
+        if kind == "struct":
+            body_lines.extend(self._render_object_struct(safe_type_name(name), schema, file_stem))
+        elif kind == "tagged_union":
+            body_lines.extend(self._render_tagged_union(safe_type_name(name), schema, file_stem))
+        elif kind == "untagged_union":
+            body_lines.extend(self._render_untagged_union(safe_type_name(name), schema, file_stem))
+        elif kind == "inherited":
+            body_lines.extend(self._render_alloff(safe_type_name(name), schema, file_stem))
+        else:
+            body_lines.append(f"pub type {safe_type_name(name)} = serde_json::Value;\n")
+
+        # Emit lifted siblings collected during rendering
+        sibling_lines: list[str] = []
+        for sib_name, sib_schema in self.lifted_types.get(file_stem, []):
+            sibling_lines.extend(self._render_lifted(sib_name, sib_schema, file_stem))
+        self.lifted_types.pop(file_stem, None)
+
+        with path.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(self._header())
+            f.write("#[allow(unused_imports)]\nuse serde::{Deserialize, Serialize};\n")
+            f.write("#[allow(unused_imports)]\nuse super::*;\n\n")
+            f.writelines(body_lines)
+            if sibling_lines:
+                f.write("\n")
+                f.writelines(sibling_lines)
+
+    def _render_lifted(self, name: str, schema: dict, file_stem: str) -> list[str]:
+        out: list[str] = []
+        # Recursively render the lifted schema
+        if "enum" in schema and schema.get("type") == "string":
+            buf = []
+            class W:
+                def write(self, s): buf.append(s)
+            self._emit_string_enum(W(), name, schema)
+            out.append("".join(buf))
+        elif "oneOf" in schema or "anyOf" in schema:
+            if "discriminator" in schema:
+                out.extend(self._render_tagged_union(name, schema, file_stem))
+            else:
+                out.extend(self._render_untagged_union(name, schema, file_stem))
+        elif "allOf" in schema:
+            out.extend(self._render_alloff(name, schema, file_stem))
+        elif schema.get("type") == "object" or "properties" in schema:
+            out.extend(self._render_object_struct(name, schema, file_stem))
+        else:
+            out.append(f"pub type {name} = serde_json::Value;\n\n")
+        return out
+
+    def _render_object_struct(self, type_name: str, schema: dict, file_stem: str) -> list[str]:
+        out: list[str] = []
+        if schema.get("description"):
+            for line in str(schema["description"]).splitlines():
+                out.append(f"/// {line}\n")
+        out.append("#[derive(Debug, Clone, Serialize, Deserialize)]\n")
+        out.append(f"pub struct {type_name} {{\n")
+        required = set(schema.get("required", []))
+        props = schema.get("properties", {}) or {}
+        emitted: set[str] = set()
+        for prop_name, prop_schema in props.items():
+            ident, rename = safe_field(prop_name)
+            if ident in emitted:
+                ident = ident + "_"
+            emitted.add(ident)
+            hint = type_name + to_pascal(prop_name)
+            inner_ty = self.rust_type(prop_schema, hint=hint, parent_file=file_stem)
+            is_required = prop_name in required
+            if not is_required:
+                inner_ty = f"Option<{inner_ty}>"
+            if prop_schema.get("description"):
+                for line in str(prop_schema["description"]).splitlines():
+                    out.append(f"    /// {line}\n")
+            attrs = []
+            if rename is not None:
+                attrs.append(f'rename = "{prop_name}"')
+            if not is_required:
+                attrs.append('skip_serializing_if = "Option::is_none"')
+            if attrs:
+                out.append(f"    #[serde({', '.join(attrs)})]\n")
+            out.append(f"    pub {ident}: {inner_ty},\n")
+        ap = schema.get("additionalProperties")
+        if not props and ap is None:
+            # purely free-form — emit as a HashMap newtype
+            out.pop(); out.pop()  # remove pub struct line and derive
+            out.append("#[derive(Debug, Clone, Serialize, Deserialize, Default)]\n")
+            out.append("#[serde(transparent)]\n")
+            out.append(f"pub struct {type_name}(pub std::collections::HashMap<String, serde_json::Value>);\n\n")
+            return out
+        out.append("}\n\n")
+        return out
+
+    def _render_tagged_union(self, type_name: str, schema: dict, file_stem: str) -> list[str]:
+        out: list[str] = []
+        disc = schema.get("discriminator", {}) or {}
+        prop = disc.get("propertyName", "type")
+        # Drop dotted prefix like "../event_type" - serde tag must be a direct property
+        prop_clean = prop.split("/")[-1]
+        out.append("#[derive(Debug, Clone, Serialize, Deserialize)]\n")
+        out.append(f'#[serde(tag = "{prop_clean}")]\n')
+        out.append(f"pub enum {type_name} {{\n")
+        mapping = disc.get("mapping", {}) or {}
+        # Build variants from mapping (preferred) or oneOf list
+        variants_seen: set[str] = set()
+        if mapping:
+            for tag_value, ref in mapping.items():
+                vname_base = to_pascal(re.sub(r"[^A-Za-z0-9]+", "_", tag_value).strip("_"))
+                if not vname_base:
+                    vname_base = "Variant"
+                vname = vname_base
+                i = 1
+                while vname in variants_seen:
+                    i += 1
+                    vname = f"{vname_base}{i}"
+                variants_seen.add(vname)
+                inner = safe_type_name(self.ref_name(ref))
+                out.append(f"    #[serde(rename = {json.dumps(tag_value)})]\n")
+                out.append(f"    {vname}({inner}),\n")
+        else:
+            for branch in schema.get("oneOf", []) + schema.get("anyOf", []):
+                if "$ref" in branch:
+                    rname = self.ref_name(branch["$ref"])
+                    vname = safe_type_name(rname)
+                    out.append(f"    {vname}({safe_type_name(rname)}),\n")
+                else:
+                    hint = type_name + "Variant"
+                    inner = self.rust_type(branch, hint=hint, parent_file=file_stem)
+                    out.append(f"    {hint}({inner}),\n")
+        out.append("}\n\n")
+        return out
+
+    def _render_untagged_union(self, type_name: str, schema: dict, file_stem: str) -> list[str]:
+        out: list[str] = []
+        out.append("#[derive(Debug, Clone, Serialize, Deserialize)]\n")
+        out.append("#[serde(untagged)]\n")
+        out.append(f"pub enum {type_name} {{\n")
+        branches = schema.get("oneOf") or schema.get("anyOf") or []
+        seen: set[str] = set()
+        for i, branch in enumerate(branches):
+            if "$ref" in branch:
+                rname = self.ref_name(branch["$ref"])
+                vname = safe_type_name(rname)
+            else:
+                hint = type_name + f"Variant{i}"
+                vname = hint
+            if vname in seen:
+                vname = vname + str(i)
+            seen.add(vname)
+            inner_ty = self.rust_type(branch, hint=vname, parent_file=file_stem)
+            out.append(f"    {vname}({inner_ty}),\n")
+        out.append("}\n\n")
+        return out
+
+    def _render_alloff(self, type_name: str, schema: dict, file_stem: str) -> list[str]:
+        out: list[str] = []
+        out.append("#[derive(Debug, Clone, Serialize, Deserialize)]\n")
+        out.append(f"pub struct {type_name} {{\n")
+        # For each part: if $ref -> flatten that type; if inline object -> inline its props
+        emitted: set[str] = set()
+        flatten_idx = 0
+        for part in schema.get("allOf", []):
+            if "$ref" in part:
+                ref_ty = safe_type_name(self.ref_name(part["$ref"]))
+                fname = f"flatten_{flatten_idx}"
+                flatten_idx += 1
+                out.append("    #[serde(flatten)]\n")
+                out.append(f"    pub {fname}: {ref_ty},\n")
+            elif "properties" in part:
+                required = set(part.get("required", []))
+                for prop_name, prop_schema in (part.get("properties") or {}).items():
+                    ident, rename = safe_field(prop_name)
+                    if ident in emitted:
+                        ident = ident + "_"
+                    emitted.add(ident)
+                    hint = type_name + to_pascal(prop_name)
+                    inner_ty = self.rust_type(prop_schema, hint=hint, parent_file=file_stem)
+                    is_required = prop_name in required
+                    if not is_required:
+                        inner_ty = f"Option<{inner_ty}>"
+                    attrs = []
+                    if rename is not None:
+                        attrs.append(f'rename = "{prop_name}"')
+                    if not is_required:
+                        attrs.append('skip_serializing_if = "Option::is_none"')
+                    if attrs:
+                        out.append(f"    #[serde({', '.join(attrs)})]\n")
+                    out.append(f"    pub {ident}: {inner_ty},\n")
+        out.append("}\n\n")
+        return out
+
+    # -- parameter components ----------------------------------------------
+
+    def emit_params(self) -> None:
+        params_dir = OUT_DIR / "params"
+        params_dir.mkdir(parents=True, exist_ok=True)
+        names: list[str] = []
+        for pname, p in sorted(self.parameters.items()):
+            schema = p.get("schema", {})
+            file_stem = to_snake(pname)
+            path = params_dir / f"{file_stem}.rs"
+            with path.open("w", encoding="utf-8", newline="\n") as f:
+                f.write(self._header())
+                f.write("use serde::{Deserialize, Serialize};\n\n")
+                # The parameter is usually an array of string enums.
+                items = schema.get("items", {})
+                if schema.get("type") == "array" and "enum" in items:
+                    self._emit_string_enum(f, safe_type_name(pname.replace("Parameter", "")), items)
+                else:
+                    # fall back: alias to the inner type
+                    inner = self.rust_type(schema, hint=safe_type_name(pname))
+                    f.write(f"pub type {safe_type_name(pname.replace('Parameter',''))} = {inner};\n")
+            names.append(file_stem)
+        with (params_dir / "mod.rs").open("w", encoding="utf-8", newline="\n") as f:
+            f.write(self._header())
+            for n in sorted(names):
+                f.write(f"pub mod {n};\n")
+            f.write("\n")
+            for n in sorted(names):
+                f.write(f"pub use {n}::*;\n")
+
+    # -- endpoints ---------------------------------------------------------
+
+    def emit_endpoints(self) -> None:
+        paths = self.spec.get("paths", {})
+        all_endpoint_files: set[Path] = set()
+        for path, item in paths.items():
+            for method in ("get", "post", "put", "patch", "delete"):
+                op = item.get(method)
+                if not op:
+                    continue
+                target = self._endpoint_path(path, method)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                self._emit_endpoint_file(target, path, method, op)
+                all_endpoint_files.add(target)
+
+    def _endpoint_path(self, path: str, method: str) -> Path:
+        # Drop the "/2/" prefix
+        parts = [p for p in path.split("/") if p]
+        if parts and parts[0] == "2":
+            parts = parts[1:]
+        # Convert {param} to safe ident
+        seg_dirs: list[str] = []
+        for seg in parts:
+            if seg.startswith("{") and seg.endswith("}"):
+                seg = seg[1:-1]
+            seg = re.sub(r"\.", "_", seg)
+            seg = to_snake(seg)
+            if seg in RUST_KEYWORDS:
+                seg = seg + "_"
+            if seg and seg[0].isdigit():
+                seg = "_" + seg
+            seg_dirs.append(seg)
+        return OUT_DIR.joinpath(*seg_dirs) / f"{method}.rs"
+
+    def _emit_endpoint_file(self, path: Path, url_path: str, method: str, op: dict) -> None:
+        file_stem = path.stem  # method name; lifted types live alongside
+        # Build keyed by file_stem so parent uses same key for lifted siblings
+        local_key = str(path).replace("\\", "/")
+        self.lifted_types.pop(local_key, None)
+
+        op_id = op.get("operationId", f"{method}_{path.parent.name}")
+        summary = op.get("summary", "")
+
+        params = op.get("parameters", []) or []
+        # resolve $ref parameters
+        resolved_params = []
+        for p in params:
+            if "$ref" in p:
+                ref_name = self.ref_name(p["$ref"])
+                pp = self.parameters.get(ref_name)
+                if pp is None:
+                    continue
+                pp = dict(pp)
+                pp["__ref_name__"] = ref_name
+                resolved_params.append(pp)
+            else:
+                resolved_params.append(p)
+
+        # Build Request struct fields
+        req_fields: list[tuple[str, str, dict, str | None, bool]] = []
+        # tuple: (rust_ident, raw_name, schema-or-None, optional ref-component-name, is_required)
+        for p in resolved_params:
+            raw_name = p["name"]
+            ident, rename = safe_field(raw_name)
+            schema = p.get("schema", {})
+            ref_name = p.get("__ref_name__")
+            is_required = bool(p.get("required", False))
+            req_fields.append((ident, raw_name, schema, ref_name, is_required))
+
+        # Request body
+        body = op.get("requestBody")
+        body_field = None
+        if body:
+            content = body.get("content", {})
+            json_part = content.get("application/json") or next(iter(content.values()), {})
+            body_schema = json_part.get("schema", {})
+            body_required = bool(body.get("required", False))
+            body_field = (body_schema, body_required)
+
+        # Response schema
+        responses = op.get("responses", {})
+        ok_resp = (responses.get("200") or responses.get("201") or responses.get("202")
+                   or responses.get("204") or {})
+        ok_content = (ok_resp.get("content") or {}).get("application/json") or {}
+        resp_schema = ok_content.get("schema") if ok_content else None
+
+        # ---- emit ----
+        with path.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(self._header())
+            f.write(f"//! {method.upper()} {url_path}")
+            if summary:
+                f.write(f" — {summary}")
+            f.write("\n")
+            f.write("#[allow(unused_imports)]\nuse serde::{Deserialize, Serialize};\n")
+            f.write("#[allow(unused_imports)]\nuse crate::x::types::*;\n")
+            f.write("#[allow(unused_imports)]\nuse crate::x::params;\n")
+            f.write("#[allow(unused_imports)]\nuse crate::x::serde_helpers;\n\n")
+
+            # ---- Request struct ----
+            f.write("#[derive(Debug, Clone, Serialize, Deserialize)]\n")
+            f.write("pub struct Request {\n")
+            seen_idents: set[str] = set()
+            for ident, raw_name, schema, ref_name, is_required in req_fields:
+                if ident in seen_idents:
+                    ident = ident + "_"
+                seen_idents.add(ident)
+                # Ref-based parameter — use the param-component enum, as Vec
+                if ref_name:
+                    enum_name = safe_type_name(ref_name.replace("Parameter", ""))
+                    # find module file_stem
+                    mod_stem = to_snake(ref_name)
+                    inner_ty = f"Vec<crate::x::params::{mod_stem}::{enum_name}>"
+                    if not is_required:
+                        inner_ty_full = f"Option<{inner_ty}>"
+                    else:
+                        inner_ty_full = inner_ty
+                    rename = raw_name
+                    attrs = [f'rename = "{rename}"']
+                    if not is_required:
+                        attrs.append('skip_serializing_if = "Option::is_none"')
+                        attrs.append('with = "crate::x::serde_helpers::csv_vec_opt"')
+                    else:
+                        attrs.append('with = "crate::x::serde_helpers::csv_vec"')
+                    f.write(f"    #[serde({', '.join(attrs)})]\n")
+                    f.write(f"    pub {ident}: {inner_ty_full},\n")
+                    continue
+                # Inline schema
+                hint = "Request" + to_pascal(raw_name)
+                inner_ty = self.rust_type(schema, hint=hint, parent_file=local_key)
+                rename = raw_name if to_snake(raw_name) != raw_name or raw_name in RUST_KEYWORDS else None
+                if not is_required:
+                    inner_ty = f"Option<{inner_ty}>"
+                attrs = []
+                if rename is not None:
+                    attrs.append(f'rename = "{raw_name}"')
+                if not is_required:
+                    attrs.append('skip_serializing_if = "Option::is_none"')
+                if attrs:
+                    f.write(f"    #[serde({', '.join(attrs)})]\n")
+                f.write(f"    pub {ident}: {inner_ty},\n")
+            # body
+            if body_field is not None:
+                body_schema, body_required = body_field
+                body_ty = self.rust_type(body_schema, hint="RequestBody", parent_file=local_key)
+                if not body_required:
+                    body_ty = f"Option<{body_ty}>"
+                if not body_required:
+                    f.write('    #[serde(skip_serializing_if = "Option::is_none")]\n')
+                f.write(f"    pub body: {body_ty},\n")
+            f.write("}\n\n")
+
+            # ---- Response struct ----
+            if resp_schema is None:
+                f.write("/// 204 No Content / no body / non-JSON response.\n")
+                f.write("#[derive(Debug, Clone, Serialize, Deserialize, Default)]\n")
+                f.write("pub struct Response;\n\n")
+            else:
+                resp_ty = self.rust_type(resp_schema, hint="Response", parent_file=local_key)
+                f.write(f"pub type Response = {resp_ty};\n\n")
+
+            # Lifted siblings inside this endpoint file
+            for sib_name, sib_schema in self.lifted_types.get(local_key, []):
+                for line in self._render_lifted(sib_name, sib_schema, local_key):
+                    f.write(line)
+        self.lifted_types.pop(local_key, None)
+
+    # -- mod.rs files ------------------------------------------------------
+
+    def emit_mod_files(self) -> None:
+        # Emit a mod.rs for every directory under OUT_DIR (except types/ and
+        # params/, which manage their own mod.rs). Includes intermediate dirs
+        # that contain only sub-directories.
+        all_dirs: set[Path] = set()
+        for f in OUT_DIR.rglob("*.rs"):
+            for parent in f.parents:
+                if parent == OUT_DIR or not str(parent).startswith(str(OUT_DIR)):
+                    break
+                all_dirs.add(parent)
+        for dir_path in sorted(all_dirs):
+            rel = dir_path.relative_to(OUT_DIR)
+            if rel.parts and rel.parts[0] in ("types", "params"):
+                continue
+            self._write_mod_rs(dir_path)
+
+    def _write_mod_rs(self, dir_path: Path) -> None:
+        children: list[str] = []
+        for child in sorted(dir_path.iterdir()):
+            if child.is_dir():
+                if any(child.rglob("*.rs")):
+                    children.append(child.name)
+            elif child.suffix == ".rs" and child.name != "mod.rs":
+                children.append(child.stem)
+        out = dir_path / "mod.rs"
+        with out.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(self._header())
+            for c in sorted(set(children)):
+                f.write(f"pub mod {c};\n")
+
+    def emit_root(self) -> None:
+        with (OUT_DIR / "mod.rs").open("w", encoding="utf-8", newline="\n") as f:
+            f.write(self._header())
+            f.write("#![allow(non_camel_case_types, non_snake_case, dead_code)]\n\n")
+            f.write("pub mod serde_helpers;\n")
+            f.write("pub mod types;\n")
+            f.write("pub mod params;\n")
+            for entry in sorted(OUT_DIR.iterdir()):
+                if not entry.is_dir():
+                    continue
+                if entry.name in ("types", "params"):
+                    continue
+                if any(entry.rglob("*.rs")):
+                    f.write(f"pub mod {entry.name};\n")
+
+    def emit_serde_helpers(self) -> None:
+        path = OUT_DIR / "serde_helpers.rs"
+        path.write_text(self._header() + SERDE_HELPERS, encoding="utf-8", newline="\n")
+
+    # -- file header / utils -----------------------------------------------
+
+    def _header(self) -> str:
+        return (
+            "// AUTO-GENERATED by x-api-spec/codegen.py — do not edit by hand.\n"
+            f"// Source: x-api-spec/openapi.json (sha256 {self.sha[:16]}...)\n\n"
+        )
+
+    def _doc(self, f, text: str | None) -> None:
+        if not text:
+            return
+        for line in str(text).splitlines():
+            f.write(f"/// {line}\n")
+
+
+SERDE_HELPERS = '''//! Serde helpers for X API query encoding.
+//!
+//! Many query parameters in the X v2 API are documented as
+//! comma-separated lists (e.g. `tweet.fields=author_id,created_at`).
+//! Serde's default sequence encoding does not produce that shape, so
+//! these `with`-modules provide manual ser/de for `Vec<T>` and
+//! `Option<Vec<T>>` against a single string field.
+
+use std::fmt::Display;
+use std::str::FromStr;
+
+use serde::de::{self, Deserializer};
+use serde::ser::Serializer;
+use serde::{Deserialize, Serialize};
+
+pub mod csv_vec {
+    use super::*;
+
+    pub fn serialize<S, T>(items: &Vec<T>, ser: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Serialize,
+    {
+        let parts: Vec<String> = items
+            .iter()
+            .map(|t| {
+                let v = serde_json::to_value(t).map_err(serde::ser::Error::custom)?;
+                Ok(match v {
+                    serde_json::Value::String(s) => s,
+                    other => other.to_string(),
+                })
+            })
+            .collect::<Result<_, S::Error>>()?;
+        ser.serialize_str(&parts.join(","))
+    }
+
+    pub fn deserialize<'de, D, T>(de: D) -> Result<Vec<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: for<'a> Deserialize<'a>,
+    {
+        let s = String::deserialize(de)?;
+        if s.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut out = Vec::new();
+        for piece in s.split(',') {
+            let v = serde_json::Value::String(piece.to_string());
+            let t = T::deserialize(v).map_err(de::Error::custom)?;
+            out.push(t);
+        }
+        Ok(out)
+    }
+}
+
+pub mod csv_vec_opt {
+    use super::*;
+
+    pub fn serialize<S, T>(items: &Option<Vec<T>>, ser: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Serialize,
+    {
+        match items {
+            Some(v) => super::csv_vec::serialize(v, ser),
+            None => ser.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D, T>(de: D) -> Result<Option<Vec<T>>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: for<'a> Deserialize<'a>,
+    {
+        let opt = Option::<String>::deserialize(de)?;
+        match opt {
+            None => Ok(None),
+            Some(s) if s.is_empty() => Ok(Some(Vec::new())),
+            Some(s) => {
+                let mut out = Vec::new();
+                for piece in s.split(',') {
+                    let v = serde_json::Value::String(piece.to_string());
+                    let t = T::deserialize(v).map_err(de::Error::custom)?;
+                    out.push(t);
+                }
+                Ok(Some(out))
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn _dummy<T: Display + FromStr>(_: T) {}
+'''
+
+
+def main() -> None:
+    if not SPEC_PATH.exists():
+        sys.exit(f"missing {SPEC_PATH}; run x-api-spec/fetch.sh first")
+    spec, sha = load_spec()
+    print(f"Loaded openapi.json (sha256 {sha[:16]}...)")
+
+    if OUT_DIR.exists():
+        print(f"Removing {OUT_DIR} ...")
+        shutil.rmtree(OUT_DIR)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    cg = Codegen(spec, sha)
+    print("Emitting components ...")
+    cg.emit_components()
+    print("Emitting parameter components ...")
+    cg.emit_params()
+    print("Emitting serde helpers ...")
+    cg.emit_serde_helpers()
+    print("Emitting endpoints ...")
+    cg.emit_endpoints()
+    print("Emitting mod.rs files ...")
+    cg.emit_mod_files()
+    cg.emit_root()
+
+    file_count = sum(1 for _ in OUT_DIR.rglob("*.rs"))
+    print(f"Done. Wrote {file_count} files into {OUT_DIR.relative_to(REPO_ROOT)}/")
+
+
+if __name__ == "__main__":
+    main()
