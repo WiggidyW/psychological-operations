@@ -11,14 +11,17 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
+    #[serde(skip_serializing)]
     pub dm_id: DmEventId,
+    #[serde(skip_serializing)]
     pub media_id: MediaId,
+    #[serde(skip_serializing)]
     pub resource_id: DmResourceId,
 }
 
 /// 204 No Content / no body / non-JSON response.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Response;
 

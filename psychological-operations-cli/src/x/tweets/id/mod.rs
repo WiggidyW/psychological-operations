@@ -3,6 +3,7 @@
 
 pub mod delete;
 pub mod get;
+pub mod http;
 pub mod liking_users;
 pub mod quote_tweets;
 pub mod retweeted_by;

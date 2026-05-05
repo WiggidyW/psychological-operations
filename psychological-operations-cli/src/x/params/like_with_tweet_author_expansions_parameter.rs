@@ -13,3 +13,13 @@ pub enum LikeWithTweetAuthorExpansions {
     LikedTweetId,
 }
 
+impl std::fmt::Display for LikeWithTweetAuthorExpansions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LikeWithTweetAuthorExpansions::AttachmentsMediaKeys => "attachments.media_keys",
+            LikeWithTweetAuthorExpansions::LikedTweetAuthorId => "liked_tweet_author_id",
+            LikeWithTweetAuthorExpansions::LikedTweetId => "liked_tweet_id",
+        })
+    }
+}
+

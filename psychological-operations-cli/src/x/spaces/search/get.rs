@@ -11,7 +11,7 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
     pub query: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -38,5 +38,15 @@ pub enum RequestState {
     Scheduled,
     #[serde(rename = "all")]
     All,
+}
+
+impl std::fmt::Display for RequestState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestState::Live => "live",
+            RequestState::Scheduled => "scheduled",
+            RequestState::All => "all",
+        })
+    }
 }
 

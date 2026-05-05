@@ -17,3 +17,15 @@ pub enum NoteFields {
     TestResult,
 }
 
+impl std::fmt::Display for NoteFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            NoteFields::Id => "id",
+            NoteFields::Info => "info",
+            NoteFields::ScoringStatus => "scoring_status",
+            NoteFields::Status => "status",
+            NoteFields::TestResult => "test_result",
+        })
+    }
+}
+

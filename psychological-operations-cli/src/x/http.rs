@@ -63,12 +63,17 @@ impl Http {
     /// GET `path` with `query` URL-encoded. `Q` is the endpoint's
     /// `Request` struct; serde attributes (`csv_vec_opt`, `rename`,
     /// `skip_serializing_if`) are honored by reqwest's `.query()`.
-    pub async fn send_get<T, Q>(&self, path: &str, query: &Q) -> Result<T, Error>
+    pub async fn send_with_query<T, Q>(
+        &self,
+        method: Method,
+        path: &str,
+        query: &Q,
+    ) -> Result<T, Error>
     where
         T: DeserializeOwned,
         Q: Serialize + ?Sized,
     {
-        let rb = self.request(Method::GET, path).query(query);
+        let rb = self.request(method, path).query(query);
         Self::execute_unary(rb).await
     }
 
@@ -88,6 +93,49 @@ impl Http {
         if let Some(b) = body {
             rb = rb.json(b);
         }
+        Self::execute_unary(rb).await
+    }
+
+    /// Like `send_with_query` but discards the response body — useful
+    /// for endpoints that return 204 No Content or non-JSON content.
+    pub async fn send_with_query_no_response<Q>(
+        &self,
+        method: Method,
+        path: &str,
+        query: &Q,
+    ) -> Result<(), Error>
+    where
+        Q: Serialize + ?Sized,
+    {
+        let response = self
+            .request(method, path)
+            .query(query)
+            .send()
+            .await
+            .map_err(Error::Transport)?;
+        let code = response.status();
+        if code.is_success() {
+            return Ok(());
+        }
+        Err(map_error_response(code, response).await)
+    }
+
+    /// POST/PUT/PATCH that needs both a query string and a JSON body.
+    /// Used by the rare endpoint with non-path query params alongside a
+    /// body (e.g. `POST /2/tweets/search/stream/rules`).
+    pub async fn send_with_query_and_body<T, Q, B>(
+        &self,
+        method: Method,
+        path: &str,
+        query: &Q,
+        body: &B,
+    ) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+        Q: Serialize + ?Sized,
+        B: Serialize + ?Sized,
+    {
+        let rb = self.request(method, path).query(query).json(body);
         Self::execute_unary(rb).await
     }
 

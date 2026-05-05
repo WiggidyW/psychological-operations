@@ -71,3 +71,42 @@ pub enum TweetFields {
     Withheld,
 }
 
+impl std::fmt::Display for TweetFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TweetFields::Article => "article",
+            TweetFields::Attachments => "attachments",
+            TweetFields::AuthorId => "author_id",
+            TweetFields::CardUri => "card_uri",
+            TweetFields::CommunityId => "community_id",
+            TweetFields::ContextAnnotations => "context_annotations",
+            TweetFields::ConversationId => "conversation_id",
+            TweetFields::CreatedAt => "created_at",
+            TweetFields::DisplayTextRange => "display_text_range",
+            TweetFields::EditControls => "edit_controls",
+            TweetFields::EditHistoryTweetIds => "edit_history_tweet_ids",
+            TweetFields::Entities => "entities",
+            TweetFields::Geo => "geo",
+            TweetFields::Id => "id",
+            TweetFields::InReplyToUserId => "in_reply_to_user_id",
+            TweetFields::Lang => "lang",
+            TweetFields::MatchedMediaNotes => "matched_media_notes",
+            TweetFields::MediaMetadata => "media_metadata",
+            TweetFields::NonPublicMetrics => "non_public_metrics",
+            TweetFields::NoteTweet => "note_tweet",
+            TweetFields::OrganicMetrics => "organic_metrics",
+            TweetFields::PossiblySensitive => "possibly_sensitive",
+            TweetFields::PromotedMetrics => "promoted_metrics",
+            TweetFields::PublicMetrics => "public_metrics",
+            TweetFields::ReferencedTweets => "referenced_tweets",
+            TweetFields::ReplySettings => "reply_settings",
+            TweetFields::Scopes => "scopes",
+            TweetFields::Source => "source",
+            TweetFields::SuggestedSourceLinks => "suggested_source_links",
+            TweetFields::SuggestedSourceLinksWithCounts => "suggested_source_links_with_counts",
+            TweetFields::Text => "text",
+            TweetFields::Withheld => "withheld",
+        })
+    }
+}
+

@@ -22,3 +22,11 @@ pub enum CreateDmConversationRequestConversationType {
     Group,
 }
 
+impl std::fmt::Display for CreateDmConversationRequestConversationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            CreateDmConversationRequestConversationType::Group => "Group",
+        })
+    }
+}
+

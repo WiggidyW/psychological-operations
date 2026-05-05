@@ -129,6 +129,17 @@ pub enum TweetCreateRequestReplySettings {
     Verified,
 }
 
+impl std::fmt::Display for TweetCreateRequestReplySettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TweetCreateRequestReplySettings::Following => "following",
+            TweetCreateRequestReplySettings::MentionedUsers => "mentionedUsers",
+            TweetCreateRequestReplySettings::Subscribers => "subscribers",
+            TweetCreateRequestReplySettings::Verified => "verified",
+        })
+    }
+}
+
 /// Call-to-action button rendered on the media entity. Exactly one variant should be set.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TweetCreateRequestMediaCallToActions {
@@ -154,6 +165,17 @@ pub enum TweetCreateRequestPollReplySettings {
     Subscribers,
     #[serde(rename = "verified")]
     Verified,
+}
+
+impl std::fmt::Display for TweetCreateRequestPollReplySettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TweetCreateRequestPollReplySettings::Following => "following",
+            TweetCreateRequestPollReplySettings::MentionedUsers => "mentionedUsers",
+            TweetCreateRequestPollReplySettings::Subscribers => "subscribers",
+            TweetCreateRequestPollReplySettings::Verified => "verified",
+        })
+    }
 }
 
 /// App Install CTA. At least one store id should be provided.

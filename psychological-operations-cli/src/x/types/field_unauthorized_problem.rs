@@ -30,11 +30,32 @@ pub enum FieldUnauthorizedProblemResourceType {
     Space,
 }
 
+impl std::fmt::Display for FieldUnauthorizedProblemResourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            FieldUnauthorizedProblemResourceType::User => "user",
+            FieldUnauthorizedProblemResourceType::Tweet => "tweet",
+            FieldUnauthorizedProblemResourceType::Media => "media",
+            FieldUnauthorizedProblemResourceType::List => "list",
+            FieldUnauthorizedProblemResourceType::Space => "space",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FieldUnauthorizedProblemSection {
     #[serde(rename = "data")]
     Data,
     #[serde(rename = "includes")]
     Includes,
+}
+
+impl std::fmt::Display for FieldUnauthorizedProblemSection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            FieldUnauthorizedProblemSection::Data => "data",
+            FieldUnauthorizedProblemSection::Includes => "includes",
+        })
+    }
 }
 

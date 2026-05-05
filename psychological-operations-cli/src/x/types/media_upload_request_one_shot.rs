@@ -49,3 +49,18 @@ pub enum MediaUploadRequestOneShotMediaType {
     ImageTiff,
 }
 
+impl std::fmt::Display for MediaUploadRequestOneShotMediaType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MediaUploadRequestOneShotMediaType::TextSrt => "text/srt",
+            MediaUploadRequestOneShotMediaType::TextVtt => "text/vtt",
+            MediaUploadRequestOneShotMediaType::ImageJpeg => "image/jpeg",
+            MediaUploadRequestOneShotMediaType::ImageBmp => "image/bmp",
+            MediaUploadRequestOneShotMediaType::ImagePng => "image/png",
+            MediaUploadRequestOneShotMediaType::ImageWebp => "image/webp",
+            MediaUploadRequestOneShotMediaType::ImagePjpeg => "image/pjpeg",
+            MediaUploadRequestOneShotMediaType::ImageTiff => "image/tiff",
+        })
+    }
+}
+

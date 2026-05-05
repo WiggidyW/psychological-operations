@@ -3,6 +3,7 @@
 
 pub mod analytics;
 pub mod get;
+pub mod http;
 pub mod media_key;
 pub mod metadata;
 pub mod subtitles;

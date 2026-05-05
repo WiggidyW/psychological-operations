@@ -13,3 +13,13 @@ pub enum SearchCountFields {
     TweetCount,
 }
 
+impl std::fmt::Display for SearchCountFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            SearchCountFields::End => "end",
+            SearchCountFields::Start => "start",
+            SearchCountFields::TweetCount => "tweet_count",
+        })
+    }
+}
+

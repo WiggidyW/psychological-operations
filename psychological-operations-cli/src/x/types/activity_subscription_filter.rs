@@ -28,3 +28,12 @@ pub enum ActivitySubscriptionFilterDirection {
     Outbound,
 }
 
+impl std::fmt::Display for ActivitySubscriptionFilterDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ActivitySubscriptionFilterDirection::Inbound => "inbound",
+            ActivitySubscriptionFilterDirection::Outbound => "outbound",
+        })
+    }
+}
+

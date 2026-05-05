@@ -18,6 +18,18 @@ pub enum ComplianceJobStatus {
     Expired,
 }
 
+impl std::fmt::Display for ComplianceJobStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ComplianceJobStatus::Created => "created",
+            ComplianceJobStatus::InProgress => "in_progress",
+            ComplianceJobStatus::Failed => "failed",
+            ComplianceJobStatus::Complete => "complete",
+            ComplianceJobStatus::Expired => "expired",
+        })
+    }
+}
+
 /// Type of compliance job to list.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ComplianceJobType {
@@ -25,6 +37,15 @@ pub enum ComplianceJobType {
     Tweets,
     #[serde(rename = "users")]
     Users,
+}
+
+impl std::fmt::Display for ComplianceJobType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ComplianceJobType::Tweets => "tweets",
+            ComplianceJobType::Users => "users",
+        })
+    }
 }
 
 /// A string enum value which identifies a media use-case. This identifier is used to enforce use-case specific constraints (e.g. file size, video duration) and enable advanced features.
@@ -48,6 +69,21 @@ pub enum MediaCategory {
     Subtitles,
 }
 
+impl std::fmt::Display for MediaCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MediaCategory::AmplifyVideo => "amplify_video",
+            MediaCategory::TweetGif => "tweet_gif",
+            MediaCategory::TweetImage => "tweet_image",
+            MediaCategory::TweetVideo => "tweet_video",
+            MediaCategory::DmGif => "dm_gif",
+            MediaCategory::DmImage => "dm_image",
+            MediaCategory::DmVideo => "dm_video",
+            MediaCategory::Subtitles => "subtitles",
+        })
+    }
+}
+
 /// A string enum value which identifies a media use-case. This identifier is used to enforce use-case specific constraints (e.g. file size) and enable advanced features.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MediaCategoryOneShot {
@@ -59,6 +95,16 @@ pub enum MediaCategoryOneShot {
     Subtitles,
 }
 
+impl std::fmt::Display for MediaCategoryOneShot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MediaCategoryOneShot::TweetImage => "tweet_image",
+            MediaCategoryOneShot::DmImage => "dm_image",
+            MediaCategoryOneShot::Subtitles => "subtitles",
+        })
+    }
+}
+
 /// The media category of uploaded media to which subtitles should be added/deleted
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MediaCategorySubtitles {
@@ -66,6 +112,15 @@ pub enum MediaCategorySubtitles {
     AmplifyVideo,
     #[serde(rename = "TweetVideo")]
     TweetVideo,
+}
+
+impl std::fmt::Display for MediaCategorySubtitles {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MediaCategorySubtitles::AmplifyVideo => "AmplifyVideo",
+            MediaCategorySubtitles::TweetVideo => "TweetVideo",
+        })
+    }
 }
 
 /// Community Note misleading tags type.
@@ -87,6 +142,20 @@ pub enum MisleadingTags {
     OutdatedInformation,
 }
 
+impl std::fmt::Display for MisleadingTags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MisleadingTags::DisputedClaimAsFact => "disputed_claim_as_fact",
+            MisleadingTags::FactualError => "factual_error",
+            MisleadingTags::ManipulatedMedia => "manipulated_media",
+            MisleadingTags::MisinterpretedSatire => "misinterpreted_satire",
+            MisleadingTags::MissingImportantContext => "missing_important_context",
+            MisleadingTags::Other => "other",
+            MisleadingTags::OutdatedInformation => "outdated_information",
+        })
+    }
+}
+
 /// Community Note classification type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NoteClassification {
@@ -94,6 +163,15 @@ pub enum NoteClassification {
     MisinformedOrPotentiallyMisleading,
     #[serde(rename = "not_misleading")]
     NotMisleading,
+}
+
+impl std::fmt::Display for NoteClassification {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            NoteClassification::MisinformedOrPotentiallyMisleading => "misinformed_or_potentially_misleading",
+            NoteClassification::NotMisleading => "not_misleading",
+        })
+    }
 }
 
 /// Community Note rating status
@@ -115,6 +193,20 @@ pub enum NoteRatingStatus {
     NeedsYourHelp,
 }
 
+impl std::fmt::Display for NoteRatingStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            NoteRatingStatus::CurrentlyRatedHelpful => "currently_rated_helpful",
+            NoteRatingStatus::CurrentlyRatedNotHelpful => "currently_rated_not_helpful",
+            NoteRatingStatus::FirmReject => "firm_reject",
+            NoteRatingStatus::InsufficientConsensus => "insufficient_consensus",
+            NoteRatingStatus::MinimumRatingsNotMet => "minimum_ratings_not_met",
+            NoteRatingStatus::NeedsMoreRatings => "needs_more_ratings",
+            NoteRatingStatus::NeedsYourHelp => "needs_your_help",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PlaceType {
     #[serde(rename = "poi")]
@@ -131,6 +223,19 @@ pub enum PlaceType {
     Unknown,
 }
 
+impl std::fmt::Display for PlaceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PlaceType::Poi => "poi",
+            PlaceType::Neighborhood => "neighborhood",
+            PlaceType::City => "city",
+            PlaceType::Admin => "admin",
+            PlaceType::Country => "country",
+            PlaceType::Unknown => "unknown",
+        })
+    }
+}
+
 /// Shows who can reply a Tweet. Fields returned are everyone, mentioned_users, and following.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ReplySettings {
@@ -142,6 +247,17 @@ pub enum ReplySettings {
     Following,
     #[serde(rename = "other")]
     Other,
+}
+
+impl std::fmt::Display for ReplySettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ReplySettings::Everyone => "everyone",
+            ReplySettings::MentionedUsers => "mentionedUsers",
+            ReplySettings::Following => "following",
+            ReplySettings::Other => "other",
+        })
+    }
 }
 
 /// Shows who can reply a Tweet. Fields returned are everyone, mentioned_users, subscribers, verified and following.
@@ -159,5 +275,18 @@ pub enum ReplySettingsWithVerifiedUsers {
     Subscribers,
     #[serde(rename = "verified")]
     Verified,
+}
+
+impl std::fmt::Display for ReplySettingsWithVerifiedUsers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ReplySettingsWithVerifiedUsers::Everyone => "everyone",
+            ReplySettingsWithVerifiedUsers::MentionedUsers => "mentionedUsers",
+            ReplySettingsWithVerifiedUsers::Following => "following",
+            ReplySettingsWithVerifiedUsers::Other => "other",
+            ReplySettingsWithVerifiedUsers::Subscribers => "subscribers",
+            ReplySettingsWithVerifiedUsers::Verified => "verified",
+        })
+    }
 }
 

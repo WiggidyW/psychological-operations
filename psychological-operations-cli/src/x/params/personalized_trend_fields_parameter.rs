@@ -15,3 +15,14 @@ pub enum PersonalizedTrendFields {
     TrendingSince,
 }
 
+impl std::fmt::Display for PersonalizedTrendFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PersonalizedTrendFields::Category => "category",
+            PersonalizedTrendFields::PostCount => "post_count",
+            PersonalizedTrendFields::TrendName => "trend_name",
+            PersonalizedTrendFields::TrendingSince => "trending_since",
+        })
+    }
+}
+

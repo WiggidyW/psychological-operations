@@ -17,3 +17,15 @@ pub enum PlaidAccountPaymentNetworkFields {
     Type,
 }
 
+impl std::fmt::Display for PlaidAccountPaymentNetworkFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PlaidAccountPaymentNetworkFields::BankId => "bankId",
+            PlaidAccountPaymentNetworkFields::Identifier => "identifier",
+            PlaidAccountPaymentNetworkFields::TransferIn => "transferIn",
+            PlaidAccountPaymentNetworkFields::TransferOut => "transferOut",
+            PlaidAccountPaymentNetworkFields::Type => "type",
+        })
+    }
+}
+

@@ -11,3 +11,12 @@ pub enum EngagementFields {
     Measurement,
 }
 
+impl std::fmt::Display for EngagementFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            EngagementFields::Errors => "errors",
+            EngagementFields::Measurement => "measurement",
+        })
+    }
+}
+

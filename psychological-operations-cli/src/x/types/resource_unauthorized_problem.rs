@@ -32,11 +32,32 @@ pub enum ResourceUnauthorizedProblemResourceType {
     Space,
 }
 
+impl std::fmt::Display for ResourceUnauthorizedProblemResourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ResourceUnauthorizedProblemResourceType::User => "user",
+            ResourceUnauthorizedProblemResourceType::Tweet => "tweet",
+            ResourceUnauthorizedProblemResourceType::Media => "media",
+            ResourceUnauthorizedProblemResourceType::List => "list",
+            ResourceUnauthorizedProblemResourceType::Space => "space",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ResourceUnauthorizedProblemSection {
     #[serde(rename = "data")]
     Data,
     #[serde(rename = "includes")]
     Includes,
+}
+
+impl std::fmt::Display for ResourceUnauthorizedProblemSection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ResourceUnauthorizedProblemSection::Data => "data",
+            ResourceUnauthorizedProblemSection::Includes => "includes",
+        })
+    }
 }
 

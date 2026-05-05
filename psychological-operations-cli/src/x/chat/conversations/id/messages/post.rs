@@ -11,9 +11,11 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
+    #[serde(skip_serializing)]
     pub id: ChatConversationOrRecipientId,
+    #[serde(skip_serializing)]
     pub body: ChatSendMessageRequest,
 }
 

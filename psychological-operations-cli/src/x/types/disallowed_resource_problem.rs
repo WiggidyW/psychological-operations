@@ -30,11 +30,32 @@ pub enum DisallowedResourceProblemResourceType {
     Space,
 }
 
+impl std::fmt::Display for DisallowedResourceProblemResourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            DisallowedResourceProblemResourceType::User => "user",
+            DisallowedResourceProblemResourceType::Tweet => "tweet",
+            DisallowedResourceProblemResourceType::Media => "media",
+            DisallowedResourceProblemResourceType::List => "list",
+            DisallowedResourceProblemResourceType::Space => "space",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DisallowedResourceProblemSection {
     #[serde(rename = "data")]
     Data,
     #[serde(rename = "includes")]
     Includes,
+}
+
+impl std::fmt::Display for DisallowedResourceProblemSection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            DisallowedResourceProblemSection::Data => "data",
+            DisallowedResourceProblemSection::Includes => "includes",
+        })
+    }
 }
 

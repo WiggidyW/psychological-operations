@@ -3,5 +3,6 @@
 
 pub mod folders;
 pub mod get;
+pub mod http;
 pub mod post;
 pub mod tweet_id;

@@ -23,3 +23,18 @@ pub enum PlaceFields {
     PlaceType,
 }
 
+impl std::fmt::Display for PlaceFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PlaceFields::ContainedWithin => "contained_within",
+            PlaceFields::Country => "country",
+            PlaceFields::CountryCode => "country_code",
+            PlaceFields::FullName => "full_name",
+            PlaceFields::Geo => "geo",
+            PlaceFields::Id => "id",
+            PlaceFields::Name => "name",
+            PlaceFields::PlaceType => "place_type",
+        })
+    }
+}
+

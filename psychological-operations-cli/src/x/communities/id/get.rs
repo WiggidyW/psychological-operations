@@ -11,8 +11,9 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
+    #[serde(skip_serializing)]
     pub id: CommunityId,
     #[serde(rename = "community.fields", skip_serializing_if = "Option::is_none", with = "crate::x::serde_helpers::csv_vec_opt")]
     pub community_fields: Option<Vec<crate::x::params::community_fields_parameter::CommunityFields>>,

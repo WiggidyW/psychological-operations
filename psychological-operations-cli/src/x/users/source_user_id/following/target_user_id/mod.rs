@@ -2,3 +2,4 @@
 // Source: x-api-spec/openapi.json (sha256 dd4e81f817babcd5...)
 
 pub mod delete;
+pub mod http;

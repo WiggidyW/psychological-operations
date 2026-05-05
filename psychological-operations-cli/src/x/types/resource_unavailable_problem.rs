@@ -30,3 +30,15 @@ pub enum ResourceUnavailableProblemResourceType {
     Space,
 }
 
+impl std::fmt::Display for ResourceUnavailableProblemResourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ResourceUnavailableProblemResourceType::User => "user",
+            ResourceUnavailableProblemResourceType::Tweet => "tweet",
+            ResourceUnavailableProblemResourceType::Media => "media",
+            ResourceUnavailableProblemResourceType::List => "list",
+            ResourceUnavailableProblemResourceType::Space => "space",
+        })
+    }
+}
+

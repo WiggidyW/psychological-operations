@@ -9,6 +9,7 @@ pub mod followed_lists;
 pub mod followers;
 pub mod following;
 pub mod get;
+pub mod http;
 pub mod liked_tweets;
 pub mod likes;
 pub mod list_memberships;

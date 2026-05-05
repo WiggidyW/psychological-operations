@@ -11,8 +11,9 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
+    #[serde(skip_serializing)]
     pub event_id: DmEventId,
     #[serde(rename = "dm_event.fields", skip_serializing_if = "Option::is_none", with = "crate::x::serde_helpers::csv_vec_opt")]
     pub dm_event_fields: Option<Vec<crate::x::params::dm_event_fields_parameter::DmEventFields>>,

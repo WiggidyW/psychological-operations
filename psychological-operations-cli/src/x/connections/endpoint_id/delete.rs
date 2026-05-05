@@ -11,8 +11,9 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
+    #[serde(skip_serializing)]
     pub endpoint_id: RequestEndpointId,
 }
 
@@ -48,5 +49,26 @@ pub enum RequestEndpointId {
     LikesSample10Stream,
     #[serde(rename = "likes_compliance_stream")]
     LikesComplianceStream,
+}
+
+impl std::fmt::Display for RequestEndpointId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestEndpointId::FilteredStream => "filtered_stream",
+            RequestEndpointId::SampleStream => "sample_stream",
+            RequestEndpointId::Sample10Stream => "sample10_stream",
+            RequestEndpointId::FirehoseStream => "firehose_stream",
+            RequestEndpointId::TweetsComplianceStream => "tweets_compliance_stream",
+            RequestEndpointId::UsersComplianceStream => "users_compliance_stream",
+            RequestEndpointId::TweetLabelStream => "tweet_label_stream",
+            RequestEndpointId::FirehoseStreamLangEn => "firehose_stream_lang_en",
+            RequestEndpointId::FirehoseStreamLangJa => "firehose_stream_lang_ja",
+            RequestEndpointId::FirehoseStreamLangKo => "firehose_stream_lang_ko",
+            RequestEndpointId::FirehoseStreamLangPt => "firehose_stream_lang_pt",
+            RequestEndpointId::LikesFirehoseStream => "likes_firehose_stream",
+            RequestEndpointId::LikesSample10Stream => "likes_sample10_stream",
+            RequestEndpointId::LikesComplianceStream => "likes_compliance_stream",
+        })
+    }
 }
 

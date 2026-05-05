@@ -2,6 +2,7 @@
 // Source: x-api-spec/openapi.json (sha256 dd4e81f817babcd5...)
 
 pub mod get;
+pub mod http;
 pub mod post;
 pub mod replay;
 pub mod webhook_id;

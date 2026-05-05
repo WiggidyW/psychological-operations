@@ -19,3 +19,16 @@ pub enum ConnectionFields {
     Id,
 }
 
+impl std::fmt::Display for ConnectionFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ConnectionFields::ClientIp => "client_ip",
+            ConnectionFields::ConnectedAt => "connected_at",
+            ConnectionFields::DisconnectReason => "disconnect_reason",
+            ConnectionFields::DisconnectedAt => "disconnected_at",
+            ConnectionFields::EndpointName => "endpoint_name",
+            ConnectionFields::Id => "id",
+        })
+    }
+}
+

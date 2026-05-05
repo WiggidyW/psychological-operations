@@ -11,9 +11,11 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
+    #[serde(skip_serializing)]
     pub id: ListId,
+    #[serde(skip_serializing)]
     pub user_id: UserId,
 }
 

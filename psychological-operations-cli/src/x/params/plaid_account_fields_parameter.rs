@@ -27,3 +27,20 @@ pub enum PlaidAccountFields {
     Status,
 }
 
+impl std::fmt::Display for PlaidAccountFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PlaidAccountFields::AccountCategory => "accountCategory",
+            PlaidAccountFields::AccountId => "accountId",
+            PlaidAccountFields::AccountNumberDisplay => "accountNumberDisplay",
+            PlaidAccountFields::AccountType => "accountType",
+            PlaidAccountFields::AvailableBalance => "availableBalance",
+            PlaidAccountFields::Currency => "currency",
+            PlaidAccountFields::CurrentBalance => "currentBalance",
+            PlaidAccountFields::Nickname => "nickname",
+            PlaidAccountFields::ProductName => "productName",
+            PlaidAccountFields::Status => "status",
+        })
+    }
+}
+

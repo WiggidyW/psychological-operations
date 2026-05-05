@@ -270,10 +270,18 @@ class Codegen:
             f.write("use serde::{Deserialize, Serialize};\n\n")
             for name, s in items:
                 inner = self._primitive_inner(s)
+                ty = safe_type_name(name)
                 self._doc(f, s.get("description"))
                 f.write("#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]\n")
                 f.write("#[serde(transparent)]\n")
-                f.write(f"pub struct {safe_type_name(name)}(pub {inner});\n\n")
+                f.write(f"pub struct {ty}(pub {inner});\n\n")
+                # Display delegates to the inner primitive so newtypes can be
+                # format-injected into URL paths (`format!("{}/{}", base, id)`).
+                f.write(f"impl std::fmt::Display for {ty} {{\n")
+                f.write("    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n")
+                f.write("        std::fmt::Display::fmt(&self.0, f)\n")
+                f.write("    }\n")
+                f.write("}\n\n")
 
     def _primitive_inner(self, s: dict) -> str:
         t = s.get("type")
@@ -312,6 +320,7 @@ class Codegen:
         self._doc(f, schema.get("description"))
         f.write("#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]\n")
         f.write(f"pub enum {type_name} {{\n")
+        variants: list[tuple[str, str]] = []  # [(rust_variant, raw_value)]
         for v in schema.get("enum", []):
             variant = to_pascal(re.sub(r"[^A-Za-z0-9]+", "_", str(v)).strip("_"))
             if not variant:
@@ -320,8 +329,19 @@ class Codegen:
                 variant = "_" + variant
             if variant in RUST_KEYWORDS:
                 variant = variant + "_"
+            variants.append((variant, v))
             f.write(f"    #[serde(rename = {json.dumps(v)})]\n")
             f.write(f"    {variant},\n")
+        f.write("}\n\n")
+        # Display delegates to the original enum value string so the enum
+        # can be format-injected into URL paths.
+        f.write(f"impl std::fmt::Display for {type_name} {{\n")
+        f.write("    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n")
+        f.write("        f.write_str(match self {\n")
+        for rv, raw in variants:
+            f.write(f"            {type_name}::{rv} => {json.dumps(raw)},\n")
+        f.write("        })\n")
+        f.write("    }\n")
         f.write("}\n\n")
 
     # -- complex schema (object / allOf / oneOf / anyOf) --------------------
@@ -552,8 +572,9 @@ class Codegen:
     # -- endpoints ---------------------------------------------------------
 
     def emit_endpoints(self) -> None:
+        import collections as _collections
         paths = self.spec.get("paths", {})
-        all_endpoint_files: set[Path] = set()
+        dir_methods: dict[Path, list[dict]] = _collections.defaultdict(list)
         for path, item in paths.items():
             for method in ("get", "post", "put", "patch", "delete"):
                 op = item.get(method)
@@ -561,8 +582,10 @@ class Codegen:
                     continue
                 target = self._endpoint_path(path, method)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                self._emit_endpoint_file(target, path, method, op)
-                all_endpoint_files.add(target)
+                meta = self._emit_endpoint_file(target, path, method, op)
+                dir_methods[target.parent].append(meta)
+        for dir_path, methods in dir_methods.items():
+            self._emit_endpoint_http_file(dir_path, methods)
 
     def _endpoint_path(self, path: str, method: str) -> Path:
         # Drop the "/2/" prefix
@@ -608,15 +631,16 @@ class Codegen:
                 resolved_params.append(p)
 
         # Build Request struct fields
-        req_fields: list[tuple[str, str, dict, str | None, bool]] = []
-        # tuple: (rust_ident, raw_name, schema-or-None, optional ref-component-name, is_required)
+        req_fields: list[tuple[str, str, dict, str | None, bool, str]] = []
+        # tuple: (rust_ident, raw_name, schema, optional ref-component-name, is_required, in_kind)
         for p in resolved_params:
             raw_name = p["name"]
             ident, rename = safe_field(raw_name)
             schema = p.get("schema", {})
             ref_name = p.get("__ref_name__")
             is_required = bool(p.get("required", False))
-            req_fields.append((ident, raw_name, schema, ref_name, is_required))
+            in_kind = p.get("in", "query")  # "path" | "query" | "header" | "cookie"
+            req_fields.append((ident, raw_name, schema, ref_name, is_required, in_kind))
 
         # Request body
         body = op.get("requestBody")
@@ -647,18 +671,25 @@ class Codegen:
             f.write("#[allow(unused_imports)]\nuse crate::x::params;\n")
             f.write("#[allow(unused_imports)]\nuse crate::x::serde_helpers;\n\n")
 
+            # Track path-param idents for the URL-template emitter.
+            path_params_meta: list[tuple[str, str]] = []  # [(rust_ident, raw_name)]
+            has_query_params = False
+
             # ---- Request struct ----
-            f.write("#[derive(Debug, Clone, Serialize, Deserialize)]\n")
+            f.write("#[derive(Debug, Clone, Serialize)]\n")
             f.write("pub struct Request {\n")
             seen_idents: set[str] = set()
-            for ident, raw_name, schema, ref_name, is_required in req_fields:
+            for ident, raw_name, schema, ref_name, is_required, in_kind in req_fields:
                 if ident in seen_idents:
                     ident = ident + "_"
                 seen_idents.add(ident)
+                if in_kind == "path":
+                    path_params_meta.append((ident, raw_name))
+                else:
+                    has_query_params = True
                 # Ref-based parameter — use the param-component enum, as Vec
                 if ref_name:
                     enum_name = safe_type_name(ref_name.replace("Parameter", ""))
-                    # find module file_stem
                     mod_stem = to_snake(ref_name)
                     inner_ty = f"Vec<crate::x::params::{mod_stem}::{enum_name}>"
                     if not is_required:
@@ -667,11 +698,14 @@ class Codegen:
                         inner_ty_full = inner_ty
                     rename = raw_name
                     attrs = [f'rename = "{rename}"']
-                    if not is_required:
-                        attrs.append('skip_serializing_if = "Option::is_none"')
-                        attrs.append('with = "crate::x::serde_helpers::csv_vec_opt"')
+                    if in_kind == "path":
+                        attrs.append("skip_serializing")
                     else:
-                        attrs.append('with = "crate::x::serde_helpers::csv_vec"')
+                        if not is_required:
+                            attrs.append('skip_serializing_if = "Option::is_none"')
+                            attrs.append('with = "crate::x::serde_helpers::csv_vec_opt"')
+                        else:
+                            attrs.append('with = "crate::x::serde_helpers::csv_vec"')
                     f.write(f"    #[serde({', '.join(attrs)})]\n")
                     f.write(f"    pub {ident}: {inner_ty_full},\n")
                     continue
@@ -679,12 +713,14 @@ class Codegen:
                 hint = "Request" + to_pascal(raw_name)
                 inner_ty = self.rust_type(schema, hint=hint, parent_file=local_key)
                 rename = raw_name if to_snake(raw_name) != raw_name or raw_name in RUST_KEYWORDS else None
-                if not is_required:
+                if not is_required and in_kind != "path":
                     inner_ty = f"Option<{inner_ty}>"
                 attrs = []
                 if rename is not None:
                     attrs.append(f'rename = "{raw_name}"')
-                if not is_required:
+                if in_kind == "path":
+                    attrs.append("skip_serializing")
+                elif not is_required:
                     attrs.append('skip_serializing_if = "Option::is_none"')
                 if attrs:
                     f.write(f"    #[serde({', '.join(attrs)})]\n")
@@ -695,25 +731,155 @@ class Codegen:
                 body_ty = self.rust_type(body_schema, hint="RequestBody", parent_file=local_key)
                 if not body_required:
                     body_ty = f"Option<{body_ty}>"
-                if not body_required:
-                    f.write('    #[serde(skip_serializing_if = "Option::is_none")]\n')
+                # body is sent as JSON via the http.rs helper, never as a query
+                # string param — skip when serializing the whole Request.
+                f.write('    #[serde(skip_serializing)]\n')
                 f.write(f"    pub body: {body_ty},\n")
             f.write("}\n\n")
 
             # ---- Response struct ----
             if resp_schema is None:
                 f.write("/// 204 No Content / no body / non-JSON response.\n")
-                f.write("#[derive(Debug, Clone, Serialize, Deserialize, Default)]\n")
+                f.write("#[derive(Debug, Clone, Default)]\n")
                 f.write("pub struct Response;\n\n")
+                has_response = False
             else:
                 resp_ty = self.rust_type(resp_schema, hint="Response", parent_file=local_key)
                 f.write(f"pub type Response = {resp_ty};\n\n")
+                has_response = True
 
             # Lifted siblings inside this endpoint file
             for sib_name, sib_schema in self.lifted_types.get(local_key, []):
                 for line in self._render_lifted(sib_name, sib_schema, local_key):
                     f.write(line)
         self.lifted_types.pop(local_key, None)
+
+        # Build URL template: drop /2/ prefix, replace {name} with {} for format!().
+        parts = [p for p in url_path.split("/") if p]
+        if parts and parts[0] == "2":
+            parts = parts[1:]
+        url_template_parts = []
+        for seg in parts:
+            if seg.startswith("{") and seg.endswith("}"):
+                url_template_parts.append("{}")
+            else:
+                url_template_parts.append(seg)
+        url_template = "/".join(url_template_parts)
+
+        return {
+            "method": method,
+            "url_path": url_path,
+            "url_template": url_template,
+            "path_params": path_params_meta,
+            "has_query_params": has_query_params,
+            "has_body": body_field is not None,
+            "body_required": (body_field[1] if body_field is not None else False),
+            "has_response": has_response,
+        }
+
+    # -- per-endpoint http.rs ----------------------------------------------
+
+    def _emit_endpoint_http_file(self, dir_path: Path, methods: list[dict]) -> None:
+        path = dir_path / "http.rs"
+        # Sort by HTTP method order for deterministic output.
+        order = {"get": 0, "post": 1, "put": 2, "patch": 3, "delete": 4}
+        methods = sorted(methods, key=lambda m: order.get(m["method"], 99))
+        with path.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(self._header())
+            url_paths = ", ".join(sorted({m["url_path"] for m in methods}))
+            f.write(f"//! HTTP call helpers for {url_paths}.\n")
+            f.write("#[allow(unused_imports)]\nuse crate::x::http::Http;\n")
+            f.write("#[allow(unused_imports)]\nuse crate::x::Error;\n")
+            f.write("#[allow(unused_imports)]\nuse reqwest::Method;\n\n")
+            for meta in methods:
+                self._render_http_fn(f, meta)
+
+    def _render_http_fn(self, f, meta: dict) -> None:
+        method = meta["method"]
+        url_template = meta["url_template"]
+        path_params = meta["path_params"]
+        has_query = meta["has_query_params"]
+        has_body = meta["has_body"]
+        body_required = meta["body_required"]
+        has_response = meta["has_response"]
+
+        # Determine whether `req` is referenced in the body. It is unused
+        # only when there are no path params, no query params, and no body
+        # to forward (typical: a DELETE with empty Request).
+        req_used = bool(path_params) or has_query or has_body
+        req_ident = "req" if req_used else "_req"
+
+        f.write(f"/// {method.upper()} {meta['url_path']}\n")
+        f.write(f"pub async fn {method}(\n")
+        f.write("    http: &Http,\n")
+        f.write(f"    {req_ident}: &super::{method}::Request,\n")
+        f.write(f") -> Result<super::{method}::Response, Error> {{\n")
+
+        # ---- Build the path string ----
+        if path_params:
+            args = ", ".join(
+                f"urlencoding::encode(&req.{ident}.to_string())"
+                for ident, _ in path_params
+            )
+            f.write(f'    let path = format!("{url_template}", {args});\n')
+            path_expr = "&path"
+        else:
+            f.write(f'    let path = "{url_template}";\n')
+            path_expr = "path"
+
+        # ---- Dispatch ----
+        m_upper = method.upper()
+        method_const = f"Method::{m_upper}"
+
+        if has_query and has_body:
+            # Rare: POST + query + body. body_required is true for the
+            # only known case (POST /2/tweets/search/stream/rules).
+            f.write(
+                f"    http.send_with_query_and_body({method_const}, "
+                f"{path_expr}, req, &req.body).await\n"
+            )
+        elif has_query:
+            # GET (always uses this branch since GETs always have query),
+            # plus the rare non-GET with query but no body.
+            if has_response:
+                f.write(
+                    f"    http.send_with_query({method_const}, {path_expr}, req).await\n"
+                )
+            else:
+                f.write(
+                    f"    http.send_with_query_no_response({method_const}, "
+                    f"{path_expr}, req).await?;\n"
+                )
+                f.write(f"    Ok(super::{method}::Response)\n")
+        elif has_body:
+            body_arg = self._body_arg_expr(body_required)
+            if has_response:
+                f.write(
+                    f"    http.send({method_const}, {path_expr}, {body_arg}).await\n"
+                )
+            else:
+                f.write(
+                    f"    http.send_no_response({method_const}, {path_expr}, {body_arg}).await?;\n"
+                )
+                f.write(f"    Ok(super::{method}::Response)\n")
+        else:
+            # No body, no query — typical DELETE.
+            if has_response:
+                f.write(
+                    f"    http.send::<_, ()>({method_const}, {path_expr}, None).await\n"
+                )
+            else:
+                f.write(
+                    f"    http.send_no_response::<()>({method_const}, {path_expr}, None).await?;\n"
+                )
+                f.write(f"    Ok(super::{method}::Response)\n")
+
+        f.write("}\n\n")
+
+    def _body_arg_expr(self, body_required: bool) -> str:
+        if body_required:
+            return "Some(&req.body)"
+        return "req.body.as_ref()"
 
     # -- mod.rs files ------------------------------------------------------
 

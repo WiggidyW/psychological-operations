@@ -27,3 +27,14 @@ pub enum ConnectionExceptionProblemConnectionIssue {
     RulesInvalidIssue,
 }
 
+impl std::fmt::Display for ConnectionExceptionProblemConnectionIssue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ConnectionExceptionProblemConnectionIssue::TooManyConnections => "TooManyConnections",
+            ConnectionExceptionProblemConnectionIssue::ProvisioningSubscription => "ProvisioningSubscription",
+            ConnectionExceptionProblemConnectionIssue::RuleConfigurationIssue => "RuleConfigurationIssue",
+            ConnectionExceptionProblemConnectionIssue::RulesInvalidIssue => "RulesInvalidIssue",
+        })
+    }
+}
+

@@ -51,3 +51,32 @@ pub enum AnalyticsFields {
     UserProfileClicks,
 }
 
+impl std::fmt::Display for AnalyticsFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            AnalyticsFields::AppInstallAttempts => "app_install_attempts",
+            AnalyticsFields::AppOpens => "app_opens",
+            AnalyticsFields::Bookmarks => "bookmarks",
+            AnalyticsFields::DetailExpands => "detail_expands",
+            AnalyticsFields::EmailTweet => "email_tweet",
+            AnalyticsFields::Engagements => "engagements",
+            AnalyticsFields::Follows => "follows",
+            AnalyticsFields::HashtagClicks => "hashtag_clicks",
+            AnalyticsFields::Id => "id",
+            AnalyticsFields::Impressions => "impressions",
+            AnalyticsFields::Likes => "likes",
+            AnalyticsFields::MediaViews => "media_views",
+            AnalyticsFields::PermalinkClicks => "permalink_clicks",
+            AnalyticsFields::QuoteTweets => "quote_tweets",
+            AnalyticsFields::Replies => "replies",
+            AnalyticsFields::Retweets => "retweets",
+            AnalyticsFields::Shares => "shares",
+            AnalyticsFields::Timestamp => "timestamp",
+            AnalyticsFields::Unfollows => "unfollows",
+            AnalyticsFields::Unlikes => "unlikes",
+            AnalyticsFields::UrlClicks => "url_clicks",
+            AnalyticsFields::UserProfileClicks => "user_profile_clicks",
+        })
+    }
+}
+

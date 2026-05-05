@@ -11,7 +11,7 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
     pub media_keys: Vec<MediaKey>,
     pub end_time: chrono::DateTime<chrono::Utc>,
@@ -31,5 +31,15 @@ pub enum RequestGranularity {
     Daily,
     #[serde(rename = "total")]
     Total,
+}
+
+impl std::fmt::Display for RequestGranularity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestGranularity::Hourly => "hourly",
+            RequestGranularity::Daily => "daily",
+            RequestGranularity::Total => "total",
+        })
+    }
 }
 

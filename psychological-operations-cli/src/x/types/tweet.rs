@@ -242,3 +242,13 @@ pub enum TweetReferencedTweetsItemType {
     RepliedTo,
 }
 
+impl std::fmt::Display for TweetReferencedTweetsItemType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TweetReferencedTweetsItemType::Retweeted => "retweeted",
+            TweetReferencedTweetsItemType::Quoted => "quoted",
+            TweetReferencedTweetsItemType::RepliedTo => "replied_to",
+        })
+    }
+}
+

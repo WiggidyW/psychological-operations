@@ -15,3 +15,14 @@ pub enum PublicKeyFields {
     Version,
 }
 
+impl std::fmt::Display for PublicKeyFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PublicKeyFields::JuiceboxConfig => "juicebox_config",
+            PublicKeyFields::PublicKey => "public_key",
+            PublicKeyFields::SigningPublicKey => "signing_public_key",
+            PublicKeyFields::Version => "version",
+        })
+    }
+}
+

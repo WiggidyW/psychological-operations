@@ -27,3 +27,20 @@ pub enum ComplianceJobFields {
     UploadUrl,
 }
 
+impl std::fmt::Display for ComplianceJobFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ComplianceJobFields::CreatedAt => "created_at",
+            ComplianceJobFields::DownloadExpiresAt => "download_expires_at",
+            ComplianceJobFields::DownloadUrl => "download_url",
+            ComplianceJobFields::Id => "id",
+            ComplianceJobFields::Name => "name",
+            ComplianceJobFields::Resumable => "resumable",
+            ComplianceJobFields::Status => "status",
+            ComplianceJobFields::Type => "type",
+            ComplianceJobFields::UploadExpiresAt => "upload_expires_at",
+            ComplianceJobFields::UploadUrl => "upload_url",
+        })
+    }
+}
+

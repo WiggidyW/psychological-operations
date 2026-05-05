@@ -35,3 +35,24 @@ pub enum TweetExpansions {
     ReferencedTweetsIdAuthorId,
 }
 
+impl std::fmt::Display for TweetExpansions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TweetExpansions::ArticleCoverMedia => "article.cover_media",
+            TweetExpansions::ArticleMediaEntities => "article.media_entities",
+            TweetExpansions::AttachmentsMediaKeys => "attachments.media_keys",
+            TweetExpansions::AttachmentsMediaSourceTweet => "attachments.media_source_tweet",
+            TweetExpansions::AttachmentsPollIds => "attachments.poll_ids",
+            TweetExpansions::AuthorId => "author_id",
+            TweetExpansions::EditHistoryTweetIds => "edit_history_tweet_ids",
+            TweetExpansions::EntitiesMentionsUsername => "entities.mentions.username",
+            TweetExpansions::GeoPlaceId => "geo.place_id",
+            TweetExpansions::InReplyToUserId => "in_reply_to_user_id",
+            TweetExpansions::EntitiesNoteMentionsUsername => "entities.note.mentions.username",
+            TweetExpansions::ReferencedTweetsId => "referenced_tweets.id",
+            TweetExpansions::ReferencedTweetsIdAttachmentsMediaKeys => "referenced_tweets.id.attachments.media_keys",
+            TweetExpansions::ReferencedTweetsIdAuthorId => "referenced_tweets.id.author_id",
+        })
+    }
+}
+

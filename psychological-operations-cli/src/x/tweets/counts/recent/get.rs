@@ -11,7 +11,7 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
     pub query: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -42,5 +42,15 @@ pub enum RequestGranularity {
     Hour,
     #[serde(rename = "day")]
     Day,
+}
+
+impl std::fmt::Display for RequestGranularity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestGranularity::Minute => "minute",
+            RequestGranularity::Hour => "hour",
+            RequestGranularity::Day => "day",
+        })
+    }
 }
 

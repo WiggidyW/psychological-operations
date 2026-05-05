@@ -59,3 +59,36 @@ pub enum UserFields {
     Withheld,
 }
 
+impl std::fmt::Display for UserFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            UserFields::Affiliation => "affiliation",
+            UserFields::ConfirmedEmail => "confirmed_email",
+            UserFields::ConnectionStatus => "connection_status",
+            UserFields::CreatedAt => "created_at",
+            UserFields::Description => "description",
+            UserFields::Entities => "entities",
+            UserFields::Id => "id",
+            UserFields::IsIdentityVerified => "is_identity_verified",
+            UserFields::Location => "location",
+            UserFields::MostRecentTweetId => "most_recent_tweet_id",
+            UserFields::Name => "name",
+            UserFields::Parody => "parody",
+            UserFields::PinnedTweetId => "pinned_tweet_id",
+            UserFields::ProfileBannerUrl => "profile_banner_url",
+            UserFields::ProfileImageUrl => "profile_image_url",
+            UserFields::Protected => "protected",
+            UserFields::PublicMetrics => "public_metrics",
+            UserFields::ReceivesYourDm => "receives_your_dm",
+            UserFields::Subscription => "subscription",
+            UserFields::SubscriptionType => "subscription_type",
+            UserFields::Url => "url",
+            UserFields::Username => "username",
+            UserFields::Verified => "verified",
+            UserFields::VerifiedFollowersCount => "verified_followers_count",
+            UserFields::VerifiedType => "verified_type",
+            UserFields::Withheld => "withheld",
+        })
+    }
+}
+

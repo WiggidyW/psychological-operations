@@ -69,6 +69,16 @@ pub enum SpaceState {
     Ended,
 }
 
+impl std::fmt::Display for SpaceState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            SpaceState::Live => "live",
+            SpaceState::Scheduled => "scheduled",
+            SpaceState::Ended => "ended",
+        })
+    }
+}
+
 /// The X Topic object.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpaceTopicsItem {

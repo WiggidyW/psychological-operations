@@ -13,3 +13,13 @@ pub enum UserExpansions {
     PinnedTweetId,
 }
 
+impl std::fmt::Display for UserExpansions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            UserExpansions::AffiliationUserId => "affiliation.user_id",
+            UserExpansions::MostRecentTweetId => "most_recent_tweet_id",
+            UserExpansions::PinnedTweetId => "pinned_tweet_id",
+        })
+    }
+}
+

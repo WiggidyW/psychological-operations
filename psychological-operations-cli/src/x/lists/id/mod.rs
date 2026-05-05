@@ -4,6 +4,7 @@
 pub mod delete;
 pub mod followers;
 pub mod get;
+pub mod http;
 pub mod members;
 pub mod put;
 pub mod tweets;

@@ -11,8 +11,9 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
+    #[serde(skip_serializing)]
     pub id: TweetId,
     #[serde(rename = "tweet.fields", skip_serializing_if = "Option::is_none", with = "crate::x::serde_helpers::csv_vec_opt")]
     pub tweet_fields: Option<Vec<crate::x::params::tweet_fields_parameter::TweetFields>>,

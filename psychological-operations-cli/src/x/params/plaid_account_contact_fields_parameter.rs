@@ -15,3 +15,14 @@ pub enum PlaidAccountContactFields {
     Telephones,
 }
 
+impl std::fmt::Display for PlaidAccountContactFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PlaidAccountContactFields::Addresses => "addresses",
+            PlaidAccountContactFields::Emails => "emails",
+            PlaidAccountContactFields::Holders => "holders",
+            PlaidAccountContactFields::Telephones => "telephones",
+        })
+    }
+}
+

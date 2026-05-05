@@ -35,3 +35,18 @@ pub enum OperationalDisconnectProblemDisconnectType {
     InvalidRules,
 }
 
+impl std::fmt::Display for OperationalDisconnectProblemDisconnectType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            OperationalDisconnectProblemDisconnectType::OperationalDisconnect => "OperationalDisconnect",
+            OperationalDisconnectProblemDisconnectType::UpstreamOperationalDisconnect => "UpstreamOperationalDisconnect",
+            OperationalDisconnectProblemDisconnectType::ForceDisconnect => "ForceDisconnect",
+            OperationalDisconnectProblemDisconnectType::UpstreamUncleanDisconnect => "UpstreamUncleanDisconnect",
+            OperationalDisconnectProblemDisconnectType::SlowReader => "SlowReader",
+            OperationalDisconnectProblemDisconnectType::InternalError => "InternalError",
+            OperationalDisconnectProblemDisconnectType::ClientApplicationStateDegraded => "ClientApplicationStateDegraded",
+            OperationalDisconnectProblemDisconnectType::InvalidRules => "InvalidRules",
+        })
+    }
+}
+

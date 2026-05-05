@@ -9,3 +9,11 @@ pub enum LikeExpansions {
     LikedTweetId,
 }
 
+impl std::fmt::Display for LikeExpansions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LikeExpansions::LikedTweetId => "liked_tweet_id",
+        })
+    }
+}
+

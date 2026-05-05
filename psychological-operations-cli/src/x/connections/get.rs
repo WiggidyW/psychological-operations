@@ -11,7 +11,7 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<RequestStatus>,
@@ -35,6 +35,16 @@ pub enum RequestStatus {
     Inactive,
     #[serde(rename = "all")]
     All,
+}
+
+impl std::fmt::Display for RequestStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestStatus::Active => "active",
+            RequestStatus::Inactive => "inactive",
+            RequestStatus::All => "all",
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -67,5 +77,26 @@ pub enum RequestEndpointsItem {
     LikesSample10Stream,
     #[serde(rename = "likes_compliance_stream")]
     LikesComplianceStream,
+}
+
+impl std::fmt::Display for RequestEndpointsItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestEndpointsItem::FilteredStream => "filtered_stream",
+            RequestEndpointsItem::SampleStream => "sample_stream",
+            RequestEndpointsItem::Sample10Stream => "sample10_stream",
+            RequestEndpointsItem::FirehoseStream => "firehose_stream",
+            RequestEndpointsItem::TweetsComplianceStream => "tweets_compliance_stream",
+            RequestEndpointsItem::UsersComplianceStream => "users_compliance_stream",
+            RequestEndpointsItem::TweetLabelStream => "tweet_label_stream",
+            RequestEndpointsItem::FirehoseStreamLangEn => "firehose_stream_lang_en",
+            RequestEndpointsItem::FirehoseStreamLangJa => "firehose_stream_lang_ja",
+            RequestEndpointsItem::FirehoseStreamLangKo => "firehose_stream_lang_ko",
+            RequestEndpointsItem::FirehoseStreamLangPt => "firehose_stream_lang_pt",
+            RequestEndpointsItem::LikesFirehoseStream => "likes_firehose_stream",
+            RequestEndpointsItem::LikesSample10Stream => "likes_sample10_stream",
+            RequestEndpointsItem::LikesComplianceStream => "likes_compliance_stream",
+        })
+    }
 }
 

@@ -33,3 +33,23 @@ pub enum MediaFields {
     Width,
 }
 
+impl std::fmt::Display for MediaFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MediaFields::AltText => "alt_text",
+            MediaFields::DurationMs => "duration_ms",
+            MediaFields::Height => "height",
+            MediaFields::MediaKey => "media_key",
+            MediaFields::NonPublicMetrics => "non_public_metrics",
+            MediaFields::OrganicMetrics => "organic_metrics",
+            MediaFields::PreviewImageUrl => "preview_image_url",
+            MediaFields::PromotedMetrics => "promoted_metrics",
+            MediaFields::PublicMetrics => "public_metrics",
+            MediaFields::Type => "type",
+            MediaFields::Url => "url",
+            MediaFields::Variants => "variants",
+            MediaFields::Width => "width",
+        })
+    }
+}
+

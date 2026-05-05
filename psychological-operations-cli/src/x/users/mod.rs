@@ -4,6 +4,7 @@
 pub mod by;
 pub mod compliance;
 pub mod get;
+pub mod http;
 pub mod id;
 pub mod me;
 pub mod personalized_trends;

@@ -3,4 +3,5 @@
 
 pub mod buyers;
 pub mod get;
+pub mod http;
 pub mod tweets;

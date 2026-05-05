@@ -11,7 +11,7 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
     pub media_id: MediaId,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -24,5 +24,13 @@ pub type Response = MediaUploadResponse;
 pub enum RequestCommand {
     #[serde(rename = "STATUS")]
     STATUS,
+}
+
+impl std::fmt::Display for RequestCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestCommand::STATUS => "STATUS",
+        })
+    }
 }
 

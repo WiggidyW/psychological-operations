@@ -19,3 +19,16 @@ pub enum UsageFields {
     ProjectUsage,
 }
 
+impl std::fmt::Display for UsageFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            UsageFields::CapResetDay => "cap_reset_day",
+            UsageFields::DailyClientAppUsage => "daily_client_app_usage",
+            UsageFields::DailyProjectUsage => "daily_project_usage",
+            UsageFields::ProjectCap => "project_cap",
+            UsageFields::ProjectId => "project_id",
+            UsageFields::ProjectUsage => "project_usage",
+        })
+    }
+}
+

@@ -5,3 +5,4 @@ pub mod all;
 pub mod delete;
 pub mod endpoint_id;
 pub mod get;
+pub mod http;

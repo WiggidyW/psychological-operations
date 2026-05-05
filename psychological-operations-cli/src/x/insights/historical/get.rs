@@ -11,7 +11,7 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
     pub tweet_ids: Vec<TweetId>,
     pub end_time: chrono::DateTime<chrono::Utc>,
@@ -34,6 +34,17 @@ pub enum RequestGranularity {
     Weekly,
     #[serde(rename = "Total")]
     Total,
+}
+
+impl std::fmt::Display for RequestGranularity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestGranularity::Daily => "Daily",
+            RequestGranularity::Hourly => "Hourly",
+            RequestGranularity::Weekly => "Weekly",
+            RequestGranularity::Total => "Total",
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -90,5 +101,38 @@ pub enum RequestRequestedMetricsItem {
     VideoStarts,
     #[serde(rename = "VideoViews")]
     VideoViews,
+}
+
+impl std::fmt::Display for RequestRequestedMetricsItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestRequestedMetricsItem::AppInstallAttempts => "AppInstallAttempts",
+            RequestRequestedMetricsItem::AppOpens => "AppOpens",
+            RequestRequestedMetricsItem::DetailExpands => "DetailExpands",
+            RequestRequestedMetricsItem::EmailTweet => "EmailTweet",
+            RequestRequestedMetricsItem::Engagements => "Engagements",
+            RequestRequestedMetricsItem::Follows => "Follows",
+            RequestRequestedMetricsItem::HashtagClicks => "HashtagClicks",
+            RequestRequestedMetricsItem::Impressions => "Impressions",
+            RequestRequestedMetricsItem::Likes => "Likes",
+            RequestRequestedMetricsItem::LinkClicks => "LinkClicks",
+            RequestRequestedMetricsItem::MediaEngagements => "MediaEngagements",
+            RequestRequestedMetricsItem::MediaViews => "MediaViews",
+            RequestRequestedMetricsItem::PermalinkClicks => "PermalinkClicks",
+            RequestRequestedMetricsItem::ProfileVisits => "ProfileVisits",
+            RequestRequestedMetricsItem::QuoteTweets => "QuoteTweets",
+            RequestRequestedMetricsItem::Replies => "Replies",
+            RequestRequestedMetricsItem::Retweets => "Retweets",
+            RequestRequestedMetricsItem::UniqueVideoViews => "UniqueVideoViews",
+            RequestRequestedMetricsItem::UrlClicks => "UrlClicks",
+            RequestRequestedMetricsItem::UserProfileClicks => "UserProfileClicks",
+            RequestRequestedMetricsItem::VideoCompletions => "VideoCompletions",
+            RequestRequestedMetricsItem::VideoPlayed25Percent => "VideoPlayed25Percent",
+            RequestRequestedMetricsItem::VideoPlayed50Percent => "VideoPlayed50Percent",
+            RequestRequestedMetricsItem::VideoPlayed75Percent => "VideoPlayed75Percent",
+            RequestRequestedMetricsItem::VideoStarts => "VideoStarts",
+            RequestRequestedMetricsItem::VideoViews => "VideoViews",
+        })
+    }
 }
 

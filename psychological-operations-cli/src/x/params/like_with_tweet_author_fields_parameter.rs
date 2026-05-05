@@ -19,3 +19,16 @@ pub enum LikeWithTweetAuthorFields {
     TimestampMs,
 }
 
+impl std::fmt::Display for LikeWithTweetAuthorFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LikeWithTweetAuthorFields::AttachmentsMediaKeys => "attachments_media_keys",
+            LikeWithTweetAuthorFields::CreatedAt => "created_at",
+            LikeWithTweetAuthorFields::Id => "id",
+            LikeWithTweetAuthorFields::LikedTweetAuthorId => "liked_tweet_author_id",
+            LikeWithTweetAuthorFields::LikedTweetId => "liked_tweet_id",
+            LikeWithTweetAuthorFields::TimestampMs => "timestamp_ms",
+        })
+    }
+}
+

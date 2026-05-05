@@ -15,3 +15,14 @@ pub enum WebhookConfigFields {
     Valid,
 }
 
+impl std::fmt::Display for WebhookConfigFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            WebhookConfigFields::CreatedAt => "created_at",
+            WebhookConfigFields::Id => "id",
+            WebhookConfigFields::Url => "url",
+            WebhookConfigFields::Valid => "valid",
+        })
+    }
+}
+

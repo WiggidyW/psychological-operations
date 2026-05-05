@@ -11,3 +11,12 @@ pub enum TrendFields {
     TweetCount,
 }
 
+impl std::fmt::Display for TrendFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TrendFields::TrendName => "trend_name",
+            TrendFields::TweetCount => "tweet_count",
+        })
+    }
+}
+

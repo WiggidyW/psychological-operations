@@ -33,3 +33,23 @@ pub enum ChatConversationFields {
     UpdatedAt,
 }
 
+impl std::fmt::Display for ChatConversationFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ChatConversationFields::AdminIds => "admin_ids",
+            ChatConversationFields::CreatedAt => "created_at",
+            ChatConversationFields::GroupAvatarUrl => "group_avatar_url",
+            ChatConversationFields::GroupName => "group_name",
+            ChatConversationFields::Id => "id",
+            ChatConversationFields::IsMuted => "is_muted",
+            ChatConversationFields::MemberIds => "member_ids",
+            ChatConversationFields::MessageTtlMsec => "message_ttl_msec",
+            ChatConversationFields::ParticipantIds => "participant_ids",
+            ChatConversationFields::ScreenCaptureBlockingEnabled => "screen_capture_blocking_enabled",
+            ChatConversationFields::ScreenCaptureDetectionEnabled => "screen_capture_detection_enabled",
+            ChatConversationFields::Type => "type",
+            ChatConversationFields::UpdatedAt => "updated_at",
+        })
+    }
+}
+

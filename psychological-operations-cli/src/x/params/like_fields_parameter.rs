@@ -15,3 +15,14 @@ pub enum LikeFields {
     TimestampMs,
 }
 
+impl std::fmt::Display for LikeFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LikeFields::CreatedAt => "created_at",
+            LikeFields::Id => "id",
+            LikeFields::LikedTweetId => "liked_tweet_id",
+            LikeFields::TimestampMs => "timestamp_ms",
+        })
+    }
+}
+

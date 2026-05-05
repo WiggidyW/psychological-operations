@@ -27,3 +27,20 @@ pub enum NewsFields {
     UpdatedAt,
 }
 
+impl std::fmt::Display for NewsFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            NewsFields::Category => "category",
+            NewsFields::ClusterPostsResults => "cluster_posts_results",
+            NewsFields::Contexts => "contexts",
+            NewsFields::Disclaimer => "disclaimer",
+            NewsFields::Hook => "hook",
+            NewsFields::Id => "id",
+            NewsFields::Keywords => "keywords",
+            NewsFields::Name => "name",
+            NewsFields::Summary => "summary",
+            NewsFields::UpdatedAt => "updated_at",
+        })
+    }
+}
+

@@ -25,3 +25,12 @@ pub enum ClientForbiddenProblemReason {
     ClientNotEnrolled,
 }
 
+impl std::fmt::Display for ClientForbiddenProblemReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ClientForbiddenProblemReason::OfficialClientForbidden => "official-client-forbidden",
+            ClientForbiddenProblemReason::ClientNotEnrolled => "client-not-enrolled",
+        })
+    }
+}
+

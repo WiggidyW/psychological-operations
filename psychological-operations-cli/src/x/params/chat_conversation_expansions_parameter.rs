@@ -13,3 +13,13 @@ pub enum ChatConversationExpansions {
     ParticipantIds,
 }
 
+impl std::fmt::Display for ChatConversationExpansions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ChatConversationExpansions::AdminIds => "admin_ids",
+            ChatConversationExpansions::MemberIds => "member_ids",
+            ChatConversationExpansions::ParticipantIds => "participant_ids",
+        })
+    }
+}
+

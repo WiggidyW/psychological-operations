@@ -41,3 +41,27 @@ pub enum SpaceFields {
     UpdatedAt,
 }
 
+impl std::fmt::Display for SpaceFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            SpaceFields::CreatedAt => "created_at",
+            SpaceFields::CreatorId => "creator_id",
+            SpaceFields::EndedAt => "ended_at",
+            SpaceFields::HostIds => "host_ids",
+            SpaceFields::Id => "id",
+            SpaceFields::InvitedUserIds => "invited_user_ids",
+            SpaceFields::IsTicketed => "is_ticketed",
+            SpaceFields::Lang => "lang",
+            SpaceFields::ParticipantCount => "participant_count",
+            SpaceFields::ScheduledStart => "scheduled_start",
+            SpaceFields::SpeakerIds => "speaker_ids",
+            SpaceFields::StartedAt => "started_at",
+            SpaceFields::State => "state",
+            SpaceFields::SubscriberCount => "subscriber_count",
+            SpaceFields::Title => "title",
+            SpaceFields::TopicIds => "topic_ids",
+            SpaceFields::UpdatedAt => "updated_at",
+        })
+    }
+}
+

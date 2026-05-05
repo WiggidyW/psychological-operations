@@ -21,9 +21,25 @@ pub enum AudiencePolicyCreatorSubscriptionsItem {
     Any,
 }
 
+impl std::fmt::Display for AudiencePolicyCreatorSubscriptionsItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            AudiencePolicyCreatorSubscriptionsItem::Any => "Any",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AudiencePolicyXSubscriptionsItem {
     #[serde(rename = "Any")]
     Any,
+}
+
+impl std::fmt::Display for AudiencePolicyXSubscriptionsItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            AudiencePolicyXSubscriptionsItem::Any => "Any",
+        })
+    }
 }
 

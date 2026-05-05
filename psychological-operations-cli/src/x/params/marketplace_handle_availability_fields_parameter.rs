@@ -11,3 +11,12 @@ pub enum MarketplaceHandleAvailabilityFields {
     RedirectUrl,
 }
 
+impl std::fmt::Display for MarketplaceHandleAvailabilityFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MarketplaceHandleAvailabilityFields::AvailabilityState => "availability_state",
+            MarketplaceHandleAvailabilityFields::RedirectUrl => "redirect_url",
+        })
+    }
+}
+

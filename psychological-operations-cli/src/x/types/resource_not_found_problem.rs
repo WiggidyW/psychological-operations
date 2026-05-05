@@ -31,3 +31,15 @@ pub enum ResourceNotFoundProblemResourceType {
     Space,
 }
 
+impl std::fmt::Display for ResourceNotFoundProblemResourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ResourceNotFoundProblemResourceType::User => "user",
+            ResourceNotFoundProblemResourceType::Tweet => "tweet",
+            ResourceNotFoundProblemResourceType::Media => "media",
+            ResourceNotFoundProblemResourceType::List => "list",
+            ResourceNotFoundProblemResourceType::Space => "space",
+        })
+    }
+}
+

@@ -17,3 +17,15 @@ pub enum RulesCountFields {
     ProjectRulesCount,
 }
 
+impl std::fmt::Display for RulesCountFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RulesCountFields::AllProjectClientApps => "all_project_client_apps",
+            RulesCountFields::CapPerClientApp => "cap_per_client_app",
+            RulesCountFields::CapPerProject => "cap_per_project",
+            RulesCountFields::ClientAppRulesCount => "client_app_rules_count",
+            RulesCountFields::ProjectRulesCount => "project_rules_count",
+        })
+    }
+}
+

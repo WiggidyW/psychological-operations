@@ -3,5 +3,6 @@
 
 pub mod delete;
 pub mod get;
+pub mod http;
 pub mod post;
 pub mod subscription_id;

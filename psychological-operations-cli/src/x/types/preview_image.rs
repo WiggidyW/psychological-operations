@@ -28,3 +28,11 @@ pub enum PreviewImageMediaKeyMediaCategory {
     TweetImage,
 }
 
+impl std::fmt::Display for PreviewImageMediaKeyMediaCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PreviewImageMediaKeyMediaCategory::TweetImage => "TweetImage",
+        })
+    }
+}
+

@@ -3,3 +3,4 @@
 
 pub mod event_id;
 pub mod get;
+pub mod http;

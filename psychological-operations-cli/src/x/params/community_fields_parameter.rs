@@ -21,3 +21,17 @@ pub enum CommunityFields {
     Name,
 }
 
+impl std::fmt::Display for CommunityFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            CommunityFields::Access => "access",
+            CommunityFields::CreatedAt => "created_at",
+            CommunityFields::Description => "description",
+            CommunityFields::Id => "id",
+            CommunityFields::JoinPolicy => "join_policy",
+            CommunityFields::MemberCount => "member_count",
+            CommunityFields::Name => "name",
+        })
+    }
+}
+

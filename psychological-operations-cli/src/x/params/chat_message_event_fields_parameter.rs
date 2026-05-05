@@ -25,3 +25,19 @@ pub enum ChatMessageEventFields {
     SenderId,
 }
 
+impl std::fmt::Display for ChatMessageEventFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ChatMessageEventFields::ConversationId => "conversation_id",
+            ChatMessageEventFields::ConversationToken => "conversation_token",
+            ChatMessageEventFields::CreatedAtMsec => "created_at_msec",
+            ChatMessageEventFields::EncodedEvent => "encoded_event",
+            ChatMessageEventFields::Id => "id",
+            ChatMessageEventFields::IsTrusted => "is_trusted",
+            ChatMessageEventFields::MessageEventSignature => "message_event_signature",
+            ChatMessageEventFields::PreviousId => "previous_id",
+            ChatMessageEventFields::SenderId => "sender_id",
+        })
+    }
+}
+

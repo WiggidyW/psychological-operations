@@ -23,3 +23,11 @@ pub enum GeoType {
     Feature,
 }
 
+impl std::fmt::Display for GeoType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            GeoType::Feature => "Feature",
+        })
+    }
+}
+

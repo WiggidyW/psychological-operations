@@ -11,8 +11,9 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
+    #[serde(skip_serializing)]
     pub id: UserId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub since_id: Option<TweetId>,
@@ -50,5 +51,14 @@ pub enum RequestExcludeItem {
     Replies,
     #[serde(rename = "retweets")]
     Retweets,
+}
+
+impl std::fmt::Display for RequestExcludeItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestExcludeItem::Replies => "replies",
+            RequestExcludeItem::Retweets => "retweets",
+        })
+    }
 }
 

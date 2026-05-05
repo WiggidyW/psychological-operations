@@ -17,3 +17,15 @@ pub enum PollFields {
     VotingStatus,
 }
 
+impl std::fmt::Display for PollFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PollFields::DurationMinutes => "duration_minutes",
+            PollFields::EndDatetime => "end_datetime",
+            PollFields::Id => "id",
+            PollFields::Options => "options",
+            PollFields::VotingStatus => "voting_status",
+        })
+    }
+}
+

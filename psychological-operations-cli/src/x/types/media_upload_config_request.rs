@@ -59,3 +59,25 @@ pub enum MediaUploadConfigRequestMediaType {
     ModelVndUsdzZip,
 }
 
+impl std::fmt::Display for MediaUploadConfigRequestMediaType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MediaUploadConfigRequestMediaType::VideoMp4 => "video/mp4",
+            MediaUploadConfigRequestMediaType::VideoWebm => "video/webm",
+            MediaUploadConfigRequestMediaType::VideoMp2t => "video/mp2t",
+            MediaUploadConfigRequestMediaType::VideoQuicktime => "video/quicktime",
+            MediaUploadConfigRequestMediaType::TextSrt => "text/srt",
+            MediaUploadConfigRequestMediaType::TextVtt => "text/vtt",
+            MediaUploadConfigRequestMediaType::ImageJpeg => "image/jpeg",
+            MediaUploadConfigRequestMediaType::ImageGif => "image/gif",
+            MediaUploadConfigRequestMediaType::ImageBmp => "image/bmp",
+            MediaUploadConfigRequestMediaType::ImagePng => "image/png",
+            MediaUploadConfigRequestMediaType::ImageWebp => "image/webp",
+            MediaUploadConfigRequestMediaType::ImagePjpeg => "image/pjpeg",
+            MediaUploadConfigRequestMediaType::ImageTiff => "image/tiff",
+            MediaUploadConfigRequestMediaType::ModelGltfBinary => "model/gltf-binary",
+            MediaUploadConfigRequestMediaType::ModelVndUsdzZip => "model/vnd.usdz+zip",
+        })
+    }
+}
+

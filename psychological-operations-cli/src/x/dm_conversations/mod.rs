@@ -2,6 +2,7 @@
 // Source: x-api-spec/openapi.json (sha256 dd4e81f817babcd5...)
 
 pub mod dm_conversation_id;
+pub mod http;
 pub mod id;
 pub mod media;
 pub mod post;

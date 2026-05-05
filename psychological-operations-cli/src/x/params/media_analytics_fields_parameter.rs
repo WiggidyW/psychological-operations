@@ -31,3 +31,22 @@ pub enum MediaAnalyticsFields {
     WatchTimeMs,
 }
 
+impl std::fmt::Display for MediaAnalyticsFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MediaAnalyticsFields::CtaUrlClicks => "cta_url_clicks",
+            MediaAnalyticsFields::CtaWatchClicks => "cta_watch_clicks",
+            MediaAnalyticsFields::MediaKey => "media_key",
+            MediaAnalyticsFields::PlayFromTap => "play_from_tap",
+            MediaAnalyticsFields::Playback25 => "playback25",
+            MediaAnalyticsFields::Playback50 => "playback50",
+            MediaAnalyticsFields::Playback75 => "playback75",
+            MediaAnalyticsFields::PlaybackComplete => "playback_complete",
+            MediaAnalyticsFields::PlaybackStart => "playback_start",
+            MediaAnalyticsFields::Timestamp => "timestamp",
+            MediaAnalyticsFields::VideoViews => "video_views",
+            MediaAnalyticsFields::WatchTimeMs => "watch_time_ms",
+        })
+    }
+}
+

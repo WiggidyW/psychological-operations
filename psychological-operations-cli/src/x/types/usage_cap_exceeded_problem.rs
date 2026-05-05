@@ -25,11 +25,29 @@ pub enum UsageCapExceededProblemPeriod {
     Monthly,
 }
 
+impl std::fmt::Display for UsageCapExceededProblemPeriod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            UsageCapExceededProblemPeriod::Daily => "Daily",
+            UsageCapExceededProblemPeriod::Monthly => "Monthly",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UsageCapExceededProblemScope {
     #[serde(rename = "Account")]
     Account,
     #[serde(rename = "Product")]
     Product,
+}
+
+impl std::fmt::Display for UsageCapExceededProblemScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            UsageCapExceededProblemScope::Account => "Account",
+            UsageCapExceededProblemScope::Product => "Product",
+        })
+    }
 }
 

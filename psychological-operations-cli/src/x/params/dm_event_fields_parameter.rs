@@ -27,3 +27,20 @@ pub enum DmEventFields {
     Text,
 }
 
+impl std::fmt::Display for DmEventFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            DmEventFields::Attachments => "attachments",
+            DmEventFields::CreatedAt => "created_at",
+            DmEventFields::DmConversationId => "dm_conversation_id",
+            DmEventFields::Entities => "entities",
+            DmEventFields::EventType => "event_type",
+            DmEventFields::Id => "id",
+            DmEventFields::ParticipantIds => "participant_ids",
+            DmEventFields::ReferencedTweets => "referenced_tweets",
+            DmEventFields::SenderId => "sender_id",
+            DmEventFields::Text => "text",
+        })
+    }
+}
+

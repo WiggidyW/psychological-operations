@@ -100,6 +100,19 @@ pub enum UserConnectionStatusItem {
     Muting,
 }
 
+impl std::fmt::Display for UserConnectionStatusItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            UserConnectionStatusItem::FollowRequestReceived => "follow_request_received",
+            UserConnectionStatusItem::FollowRequestSent => "follow_request_sent",
+            UserConnectionStatusItem::Blocking => "blocking",
+            UserConnectionStatusItem::FollowedBy => "followed_by",
+            UserConnectionStatusItem::Following => "following",
+            UserConnectionStatusItem::Muting => "muting",
+        })
+    }
+}
+
 /// A list of metadata found in the User's profile description.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserEntities {
@@ -139,6 +152,17 @@ pub enum UserSubscriptionType {
     None,
 }
 
+impl std::fmt::Display for UserSubscriptionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            UserSubscriptionType::Basic => "Basic",
+            UserSubscriptionType::Premium => "Premium",
+            UserSubscriptionType::PremiumPlus => "PremiumPlus",
+            UserSubscriptionType::None => "None",
+        })
+    }
+}
+
 /// The X Blue verified type of the user, eg: blue, government, business or none.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UserVerifiedType {
@@ -150,6 +174,17 @@ pub enum UserVerifiedType {
     Business,
     #[serde(rename = "none")]
     None,
+}
+
+impl std::fmt::Display for UserVerifiedType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            UserVerifiedType::Blue => "blue",
+            UserVerifiedType::Government => "government",
+            UserVerifiedType::Business => "business",
+            UserVerifiedType::None => "none",
+        })
+    }
 }
 
 /// Expanded details for the URL specified in the User's profile, with start and end indices.

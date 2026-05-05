@@ -28,3 +28,12 @@ pub enum TweetWithheldScope {
     User,
 }
 
+impl std::fmt::Display for TweetWithheldScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TweetWithheldScope::Tweet => "tweet",
+            TweetWithheldScope::User => "user",
+        })
+    }
+}
+

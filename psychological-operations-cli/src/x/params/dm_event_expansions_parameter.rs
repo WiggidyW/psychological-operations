@@ -15,3 +15,14 @@ pub enum DmEventExpansions {
     SenderId,
 }
 
+impl std::fmt::Display for DmEventExpansions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            DmEventExpansions::AttachmentsMediaKeys => "attachments.media_keys",
+            DmEventExpansions::ParticipantIds => "participant_ids",
+            DmEventExpansions::ReferencedTweetsId => "referenced_tweets.id",
+            DmEventExpansions::SenderId => "sender_id",
+        })
+    }
+}
+

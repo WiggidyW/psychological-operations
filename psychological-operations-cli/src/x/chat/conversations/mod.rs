@@ -3,4 +3,5 @@
 
 pub mod get;
 pub mod group;
+pub mod http;
 pub mod id;

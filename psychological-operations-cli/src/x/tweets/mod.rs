@@ -6,6 +6,7 @@ pub mod compliance;
 pub mod counts;
 pub mod firehose;
 pub mod get;
+pub mod http;
 pub mod id;
 pub mod label;
 pub mod post;

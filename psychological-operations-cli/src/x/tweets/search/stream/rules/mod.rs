@@ -3,4 +3,5 @@
 
 pub mod counts;
 pub mod get;
+pub mod http;
 pub mod post;

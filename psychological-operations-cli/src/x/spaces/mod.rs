@@ -3,5 +3,6 @@
 
 pub mod by;
 pub mod get;
+pub mod http;
 pub mod id;
 pub mod search;

@@ -11,7 +11,7 @@ use crate::x::params;
 #[allow(unused_imports)]
 use crate::x::serde_helpers;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Request {
     #[serde(rename = "type")]
     pub type_: RequestType,
@@ -31,6 +31,15 @@ pub enum RequestType {
     Users,
 }
 
+impl std::fmt::Display for RequestType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestType::Tweets => "tweets",
+            RequestType::Users => "users",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RequestStatus {
     #[serde(rename = "created")]
@@ -41,5 +50,16 @@ pub enum RequestStatus {
     Failed,
     #[serde(rename = "complete")]
     Complete,
+}
+
+impl std::fmt::Display for RequestStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RequestStatus::Created => "created",
+            RequestStatus::InProgress => "in_progress",
+            RequestStatus::Failed => "failed",
+            RequestStatus::Complete => "complete",
+        })
+    }
 }
 

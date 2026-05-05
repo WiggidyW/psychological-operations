@@ -23,3 +23,18 @@ pub enum ListFields {
     Private,
 }
 
+impl std::fmt::Display for ListFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ListFields::CreatedAt => "created_at",
+            ListFields::Description => "description",
+            ListFields::FollowerCount => "follower_count",
+            ListFields::Id => "id",
+            ListFields::MemberCount => "member_count",
+            ListFields::Name => "name",
+            ListFields::OwnerId => "owner_id",
+            ListFields::Private => "private",
+        })
+    }
+}
+

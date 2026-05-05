@@ -17,3 +17,15 @@ pub enum SpaceExpansions {
     TopicIds,
 }
 
+impl std::fmt::Display for SpaceExpansions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            SpaceExpansions::CreatorId => "creator_id",
+            SpaceExpansions::HostIds => "host_ids",
+            SpaceExpansions::InvitedUserIds => "invited_user_ids",
+            SpaceExpansions::SpeakerIds => "speaker_ids",
+            SpaceExpansions::TopicIds => "topic_ids",
+        })
+    }
+}
+

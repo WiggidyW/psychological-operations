@@ -33,3 +33,14 @@ pub enum ProcessingInfoState {
     Failed,
 }
 
+impl std::fmt::Display for ProcessingInfoState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ProcessingInfoState::Succeeded => "succeeded",
+            ProcessingInfoState::InProgress => "in_progress",
+            ProcessingInfoState::Pending => "pending",
+            ProcessingInfoState::Failed => "failed",
+        })
+    }
+}
+
