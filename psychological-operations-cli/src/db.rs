@@ -10,21 +10,36 @@ const SCHEMA: &str = "
         id                TEXT    NOT NULL,
         psyop             TEXT    NOT NULL,
         psyop_commit_sha  TEXT    NOT NULL,
-        for_you           INTEGER NOT NULL,
-        query             TEXT,
         handle            TEXT    NOT NULL,
         created           TEXT    NOT NULL,
         likes             INTEGER NOT NULL DEFAULT 0,
         retweets          INTEGER NOT NULL DEFAULT 0,
         replies           INTEGER NOT NULL DEFAULT 0,
         ingested_at       TEXT    NOT NULL DEFAULT (datetime('now')),
-        PRIMARY KEY (id, psyop, psyop_commit_sha),
+        PRIMARY KEY (id, psyop, psyop_commit_sha)
+    );
+    CREATE INDEX IF NOT EXISTS posts_by_psyop ON posts(psyop, psyop_commit_sha);
+
+    -- A post can be ingested via multiple sources (showed up in for_you
+    -- AND in one or more query results). Each distinct source-of-arrival
+    -- gets a row keyed by (post_id, psyop, psyop_commit_sha, query) —
+    -- where query IS NULL means the for_you input. Uniqueness is
+    -- enforced via a UNIQUE INDEX with COALESCE(query,'') because
+    -- SQLite's PRIMARY KEY treats NULLs as distinct.
+    CREATE TABLE IF NOT EXISTS sources (
+        post_id           TEXT    NOT NULL,
+        psyop             TEXT    NOT NULL,
+        psyop_commit_sha  TEXT    NOT NULL,
+        for_you           INTEGER NOT NULL,
+        query             TEXT,
+        sourced_at        TEXT    NOT NULL DEFAULT (datetime('now')),
         CHECK (
             (for_you = 1 AND query IS NULL)
          OR (for_you = 0 AND query IS NOT NULL)
         )
     );
-    CREATE INDEX IF NOT EXISTS posts_by_psyop ON posts(psyop, psyop_commit_sha);
+    CREATE UNIQUE INDEX IF NOT EXISTS sources_unique
+        ON sources(post_id, psyop, psyop_commit_sha, COALESCE(query, ''));
 
     CREATE TABLE IF NOT EXISTS contents (
         post_id  TEXT PRIMARY KEY,
@@ -60,7 +75,7 @@ pub struct Post {
 }
 
 /// Which input on a psyop produced this post. Mirrors the
-/// `(for_you, query)` column pair on the `posts` table.
+/// `(for_you, query)` column pair on the `sources` table.
 #[derive(Debug, Clone)]
 pub enum Origin {
     ForYou,
@@ -84,11 +99,26 @@ impl Db {
         Ok(Self { conn })
     }
 
-    /// Insert one `(post, psyop, psyop_commit_sha, origin)` row and
-    /// upsert the post's content (keyed by post id alone, so the same
-    /// tweet ingested under multiple psyops doesn't duplicate). Returns
-    /// `true` if a new posts row was created, `false` if the
-    /// `(id, psyop, psyop_commit_sha)` triple already existed.
+    /// Ingest a post under `(psyop, psyop_commit_sha)` with the given
+    /// origin. Three things happen in one transaction:
+    ///
+    ///   1. **posts** — insert-or-ignore. If a row already exists for
+    ///      this `(id, psyop, psyop_commit_sha)`, the existing row's
+    ///      engagement counts and `ingested_at` are kept (first
+    ///      observation wins).
+    ///   2. **sources** — insert-or-ignore. A row is added for this
+    ///      post + origin if one isn't already present, so a tweet
+    ///      that arrives via multiple inputs (for_you AND a query, or
+    ///      via two distinct queries) is tagged with each source.
+    ///   3. **contents** — upsert. Body text and media URLs are
+    ///      replaced with the latest observation.
+    ///
+    /// Returns `true` if a *new source* row was created, `false` if
+    /// the post had already been ingested via this same origin under
+    /// this `(psyop, commit)`. The post-row creation status is
+    /// intentionally not surfaced — multi-source posts shouldn't be
+    /// reported as "skipped" just because the post itself was already
+    /// known.
     pub fn insert_post(
         &self,
         post: &Post,
@@ -101,17 +131,26 @@ impl Db {
             Origin::Query(q) => (0_i64, Some(q.as_str())),
         };
         let tx = self.conn.unchecked_transaction()?;
-        let inserted = tx.execute(
+
+        tx.execute(
             "INSERT OR IGNORE INTO posts
-                (id, psyop, psyop_commit_sha, for_you, query,
+                (id, psyop, psyop_commit_sha,
                  handle, created, likes, retweets, replies)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
-                post.id, psyop, psyop_commit_sha, for_you, query,
+                post.id, psyop, psyop_commit_sha,
                 post.handle, post.created,
                 post.likes as i64, post.retweets as i64, post.replies as i64,
             ],
+        )?;
+
+        let source_inserted = tx.execute(
+            "INSERT OR IGNORE INTO sources
+                (post_id, psyop, psyop_commit_sha, for_you, query)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![post.id, psyop, psyop_commit_sha, for_you, query],
         )? > 0;
+
         let images_json = serde_json::to_string(&post.images)?;
         let videos_json = serde_json::to_string(&post.videos)?;
         tx.execute(
@@ -123,8 +162,9 @@ impl Db {
                  videos = excluded.videos",
             params![post.id, post.text, images_json, videos_json],
         )?;
+
         tx.commit()?;
-        Ok(inserted)
+        Ok(source_inserted)
     }
 
     /// Upsert score rows keyed by `post_id` and drop the matching
