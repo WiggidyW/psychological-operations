@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Psychological Operations Capture",
+  "version": "0.1.0",
+  "description": "Capture For-You tweets into the local psyop DB.",
+  "permissions": ["activeTab", "scripting", "storage", "nativeMessaging"],
+  "host_permissions": ["https://x.com/*", "https://twitter.com/*"],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Capture tweets"
+  },
+  "content_scripts": [{
+    "matches": ["https://x.com/*", "https://twitter.com/*"],
+    "js": ["content_script.js"],
+    "run_at": "document_idle"
+  }]
+}

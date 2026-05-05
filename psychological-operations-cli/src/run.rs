@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 
+use crate::ingest;
 use crate::invent;
 use crate::notifications;
 use crate::psyops;
@@ -29,6 +30,12 @@ enum Commands {
         #[command(subcommand)]
         command: invent::Commands,
     },
+    /// Chrome native-messaging host. Reads framed JSON on stdin
+    /// (from the psyop-extension) and writes captured tweets into
+    /// the local DB. Identity (psyop + commit) is resolved from the
+    /// PSYOP_NAME / PSYOP_COMMIT_SHA env vars set by the launcher
+    /// when Chrome was spawned with this profile.
+    NativeHost,
 }
 
 pub enum Output {
@@ -59,6 +66,7 @@ where
         Commands::Psyops { command } => command.handle().await,
         Commands::Notifications { command } => command.handle(),
         Commands::Invent { command } => command.handle(),
+        Commands::NativeHost => ingest::run().await,
     }
     .map_err(|e| e.to_string())?;
     Ok(output.to_string())

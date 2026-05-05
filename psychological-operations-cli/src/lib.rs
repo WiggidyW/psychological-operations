@@ -6,6 +6,7 @@ pub mod score;
 pub mod notifications;
 pub mod psyops;
 pub mod x;
+pub mod ingest;
 mod publish;
 mod invent;
 
