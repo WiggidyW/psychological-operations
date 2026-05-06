@@ -1,6 +1,7 @@
 pub mod error;
 pub mod config;
 pub mod db;
+pub mod tweet;
 pub mod input;
 pub mod score;
 pub mod notifications;

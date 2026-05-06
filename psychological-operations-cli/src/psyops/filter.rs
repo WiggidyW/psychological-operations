@@ -5,6 +5,8 @@ use starlark::eval::Evaluator;
 use starlark::syntax::{AstModule, Dialect};
 use starlark::values::ValueLike;
 
+use crate::tweet::Tweet;
+
 /// Per-tweet eligibility filter. Shared by `Query` and `ForYou` —
 /// both attach an `Option<Filter>` so a source with no filter accepts
 /// every tweet that the source itself produces.
@@ -111,52 +113,38 @@ impl Filter {
     ///
     /// Static gates run first (cheap) so a tweet that's already
     /// rejected on engagement counts never pays the Starlark cost.
-    pub fn evaluate(
-        &self,
-        likes: u64,
-        retweets: u64,
-        replies: u64,
-        impressions: u64,
-        age_secs: u64,
-    ) -> Result<bool, String> {
-        if !static_pass(self, likes, retweets, replies, impressions, age_secs) {
+    pub fn evaluate(&self, t: &Tweet) -> Result<bool, String> {
+        if !static_pass(self, t) {
             return Ok(false);
         }
         match &self.custom {
             None => Ok(true),
-            Some(src) => evaluate_custom(src, likes, retweets, replies, impressions, age_secs),
+            Some(src) => evaluate_custom(src, t),
         }
     }
 }
 
-fn static_pass(
-    f: &Filter,
-    likes: u64,
-    retweets: u64,
-    replies: u64,
-    impressions: u64,
-    age: u64,
-) -> bool {
-    if let Some(v) = f.min_likes        { if likes < v        { return false; } }
-    if let Some(v) = f.max_likes        { if likes > v        { return false; } }
-    if let Some(v) = f.min_retweets     { if retweets < v     { return false; } }
-    if let Some(v) = f.max_retweets     { if retweets > v     { return false; } }
-    if let Some(v) = f.min_replies      { if replies < v      { return false; } }
-    if let Some(v) = f.max_replies      { if replies > v      { return false; } }
-    if let Some(v) = f.min_impressions  { if impressions < v  { return false; } }
-    if let Some(v) = f.max_impressions  { if impressions > v  { return false; } }
-    if let Some(v) = f.min_age          { if age < v          { return false; } }
-    if let Some(v) = f.max_age          { if age > v          { return false; } }
+fn static_pass(f: &Filter, t: &Tweet) -> bool {
+    if let Some(v) = f.min_likes        { if t.likes       < v { return false; } }
+    if let Some(v) = f.max_likes        { if t.likes       > v { return false; } }
+    if let Some(v) = f.min_retweets     { if t.retweets    < v { return false; } }
+    if let Some(v) = f.max_retweets     { if t.retweets    > v { return false; } }
+    if let Some(v) = f.min_replies      { if t.replies     < v { return false; } }
+    if let Some(v) = f.max_replies      { if t.replies     > v { return false; } }
+    if let Some(v) = f.min_impressions  { if t.impressions < v { return false; } }
+    if let Some(v) = f.max_impressions  { if t.impressions > v { return false; } }
+    if let Some(v) = f.min_age          { if t.age         < v { return false; } }
+    if let Some(v) = f.max_age          { if t.age         > v { return false; } }
 
     // Per-impression ratio gates are skipped entirely when
     // impressions == 0 — there's no meaningful rate without a
     // denominator, and we don't want to silently reject rows just
     // because the impression count hasn't been observed yet.
-    if impressions > 0 {
-        let denom = impressions as f64;
-        let likes_pi    = likes    as f64 / denom;
-        let retweets_pi = retweets as f64 / denom;
-        let replies_pi  = replies  as f64 / denom;
+    if t.impressions > 0 {
+        let denom = t.impressions as f64;
+        let likes_pi    = t.likes    as f64 / denom;
+        let retweets_pi = t.retweets as f64 / denom;
+        let replies_pi  = t.replies  as f64 / denom;
         if let Some(v) = f.min_likes_per_impression    { if likes_pi    < v { return false; } }
         if let Some(v) = f.max_likes_per_impression    { if likes_pi    > v { return false; } }
         if let Some(v) = f.min_retweets_per_impression { if retweets_pi < v { return false; } }
@@ -204,23 +192,16 @@ fn parse_custom(src: &str) -> Result<AstModule, String> {
         .map_err(|e| e.to_string())
 }
 
-fn evaluate_custom(
-    src: &str,
-    likes: u64,
-    retweets: u64,
-    replies: u64,
-    impressions: u64,
-    age: u64,
-) -> Result<bool, String> {
+fn evaluate_custom(src: &str, t: &Tweet) -> Result<bool, String> {
     let ast = parse_custom(src)?;
     let module = Module::new();
     {
         let heap = module.heap();
-        module.set("likes",       heap.alloc(likes as i64));
-        module.set("retweets",    heap.alloc(retweets as i64));
-        module.set("replies",     heap.alloc(replies as i64));
-        module.set("impressions", heap.alloc(impressions as i64));
-        module.set("age",         heap.alloc(age as i64));
+        module.set("likes",       heap.alloc(t.likes as i64));
+        module.set("retweets",    heap.alloc(t.retweets as i64));
+        module.set("replies",     heap.alloc(t.replies as i64));
+        module.set("impressions", heap.alloc(t.impressions as i64));
+        module.set("age",         heap.alloc(t.age as i64));
     }
     let globals = Globals::standard();
     {
@@ -240,6 +221,11 @@ fn evaluate_custom(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tweet::tw_default;
+
+    fn tw(likes: u64, retweets: u64, replies: u64, impressions: u64, age: u64) -> Tweet {
+        Tweet { likes, retweets, replies, impressions, age, ..tw_default("test") }
+    }
 
     #[test]
     fn custom_passes_and_fails() {
@@ -247,8 +233,8 @@ mod tests {
             custom: Some("likes > 100".into()),
             ..Default::default()
         };
-        assert!(f.evaluate(200, 0, 0, 0, 0).unwrap());
-        assert!(!f.evaluate(50, 0, 0, 0, 0).unwrap());
+        assert!(f.evaluate(&tw(200, 0, 0, 0, 0)).unwrap());
+        assert!(!f.evaluate(&tw(50, 0, 0, 0, 0)).unwrap());
     }
 
     #[test]
@@ -258,9 +244,9 @@ mod tests {
             custom: Some("retweets > replies".into()),
             ..Default::default()
         };
-        assert!(f.evaluate(20, 5, 1, 0, 0).unwrap());   // both pass
-        assert!(!f.evaluate(20, 1, 5, 0, 0).unwrap());  // custom fails
-        assert!(!f.evaluate(5,  5, 1, 0, 0).unwrap());  // static fails
+        assert!(f.evaluate(&tw(20, 5, 1, 0, 0)).unwrap());   // both pass
+        assert!(!f.evaluate(&tw(20, 1, 5, 0, 0)).unwrap());  // custom fails
+        assert!(!f.evaluate(&tw(5,  5, 1, 0, 0)).unwrap());  // static fails
     }
 
     #[test]
@@ -278,7 +264,7 @@ mod tests {
             custom: Some("42".into()),
             ..Default::default()
         };
-        assert!(f.evaluate(0, 0, 0, 0, 0).is_err());
+        assert!(f.evaluate(&tw(0, 0, 0, 0, 0)).is_err());
     }
 
     #[test]
@@ -344,11 +330,11 @@ mod tests {
             ..Default::default()
         };
         f.validate().unwrap();
-        assert!(f.evaluate(60, 0, 0, 1000, 0).unwrap());   // 6% — pass
-        assert!(!f.evaluate(40, 0, 0, 1000, 0).unwrap());  // 4% — reject
+        assert!(f.evaluate(&tw(60, 0, 0, 1000, 0)).unwrap());   // 6% — pass
+        assert!(!f.evaluate(&tw(40, 0, 0, 1000, 0)).unwrap());  // 4% — reject
         // zero impressions: ratio gates are skipped entirely, so this
         // passes despite the positive `min_likes_per_impression`.
-        assert!(f.evaluate(10, 0, 0, 0, 0).unwrap());
+        assert!(f.evaluate(&tw(10, 0, 0, 0, 0)).unwrap());
     }
 
     #[test]
@@ -360,6 +346,6 @@ mod tests {
             ),
             ..Default::default()
         };
-        assert!(f.evaluate(1, 2, 3, 4, 5).unwrap());
+        assert!(f.evaluate(&tw(1, 2, 3, 4, 5)).unwrap());
     }
 }

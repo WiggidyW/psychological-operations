@@ -114,6 +114,9 @@ impl PsyOp {
                 crate::error::Error::InvalidPsyop(format!("for_you.filter: {e}"))
             })?;
         }
+        self.sort.validate().map_err(|e| {
+            crate::error::Error::InvalidPsyop(format!("sort: {e}"))
+        })?;
         Ok(())
     }
 }
