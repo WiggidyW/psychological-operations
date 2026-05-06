@@ -52,6 +52,15 @@ pub struct PsyOp {
     /// descending; `None` ranks below every `Some(_)`. `sort` is the
     /// tiebreak among equal-priority items).
     pub sort: SortBy,
+
+    /// When `false`, queries are skipped on a run as long as the
+    /// for-you input still has queued candidates — the rationale
+    /// being that if the algorithmic feed is feeding us enough
+    /// material, paying for X v2 search calls is wasteful. When
+    /// `true`, queries always run regardless of for-you queue state.
+    /// Defaults to `true` (no implicit skipping).
+    #[serde(default = "default_true")]
+    pub query_when_for_you_queued: bool,
 }
 
 fn default_true() -> bool { true }
