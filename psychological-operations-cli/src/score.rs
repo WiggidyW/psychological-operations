@@ -7,15 +7,13 @@ use objectiveai::functions::executions::request::Strategy;
 use objectiveai::RemotePathCommitOptional;
 use serde::Deserialize;
 
-use crate::db::{Post, UnscoredEntry};
+use crate::db::Post;
 use crate::input::{new_post_input_value, PostsInputValue, PostInputValue};
 use crate::psyops::{PsyOp, is_vector_function};
 
 #[derive(Clone)]
 pub struct ScoredPost {
     pub post: Post,
-    /// The filter URL that originally found this post.
-    pub query: String,
     pub score: f64,
 }
 
@@ -187,11 +185,11 @@ fn run_function_execution(
     Ok(result)
 }
 
-/// Run the psyop's single function execution against the given entries.
+/// Run the psyop's single function execution against the given posts.
 /// Returns scored posts in score-descending order.
-pub fn score(psyop: &PsyOp, entries: Vec<UnscoredEntry>) -> Result<Vec<ScoredPost>, crate::error::Error> {
-    let mut scored: Vec<ScoredPost> = entries.into_iter()
-        .map(|e| ScoredPost { post: e.post, query: e.query, score: 0.0 })
+pub fn score(psyop: &PsyOp, posts: Vec<Post>) -> Result<Vec<ScoredPost>, crate::error::Error> {
+    let mut scored: Vec<ScoredPost> = posts.into_iter()
+        .map(|p| ScoredPost { post: p, score: 0.0 })
         .collect();
 
     eprintln!("Scoring {} posts...", scored.len());

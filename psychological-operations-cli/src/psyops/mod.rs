@@ -16,8 +16,6 @@ pub use filter::*;
 use clap::{Args, Subcommand};
 use serde::Serialize;
 
-use self::psyop::PsyOp;
-
 #[derive(Subcommand)]
 pub enum Commands {
     /// List all psyops on disk. `enabled` reflects the resolved state at
@@ -148,7 +146,7 @@ fn list(enabled: bool, disabled: bool) -> Result<crate::Output, crate::error::Er
 }
 
 fn get(name: &str) -> Result<crate::Output, crate::error::Error> {
-    let psyop = crate::psyop::load(name)?;
+    let psyop = self::psyop::load(name)?;
     Ok(crate::Output::ConfigGet(serde_json::to_string(&psyop)?))
 }
 

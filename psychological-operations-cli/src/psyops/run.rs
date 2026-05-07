@@ -1,270 +1,437 @@
-//! `psyops run` — run every enabled psyop in rounds. Each round picks the
-//! psyops that currently have enough data, runs them concurrently, persists
-//! their scores, and then re-evaluates eligibility. The loop terminates
-//! once a round finds no eligible psyops, so cascading psyops (whose
-//! `Source.min_score` depends on another psyop's just-written scores)
-//! get a chance to run after their upstream completes.
+//! `psyops run` — execute a single psyop end-to-end.
+//!
+//! Per-psyop flow (see `look-at-how-claude-agent-sdk-runner-…` plan):
+//! 1. Drain the for_you_queue, hydrating each id via X v2 `/2/tweets/{id}`
+//!    and persisting via `Db::insert_post(_, _, _, Origin::ForYou)`.
+//! 2. Read every unscored tweet for `(psyop, commit)` with its origins.
+//! 3. Filter — accept iff at least one origin's filter accepts; the
+//!    tweet's effective priority is the smallest priority across
+//!    accepting origins.
+//! 4. If filtered count < `min_posts` and queries haven't run yet
+//!    (and the for_you_queued policy allows), run the psyop's queries
+//!    via X v2 `/2/tweets/search/recent`, persist results, loop back
+//!    to step 1.
+//! 5. Bucket-sort accepted tweets by effective priority (smallest
+//!    first; `None` last); each bucket is sorted via `SortBy::evaluate`;
+//!    buckets concatenate in priority order.
+//! 6. Trim to `max_posts`.
+//! 7. **TODO**: scoring + `Db::set_scores`. Currently `todo!()`.
 
-use std::collections::HashSet;
+use std::collections::BTreeMap;
 
-use crate::db::UnscoredEntry;
-use super::PsyOp;
+use crate::db::{Db, Origin, Post};
+use crate::error::Error;
+use crate::tweet::Tweet;
+use crate::x::http::Http;
+use crate::x::params::tweet_expansions_parameter::TweetExpansions;
+use crate::x::params::tweet_fields_parameter::TweetFields;
+use crate::x::params::user_fields_parameter::UserFields;
+use crate::x::types::TweetId;
 
-pub async fn run_all(name_filter: Option<&str>, commit_filter: Option<&str>) -> Result<crate::Output, crate::error::Error> {
-    let cfg = crate::config::load();
-    let dir = crate::config::psyops_dir();
-    if !dir.exists() {
-        eprintln!("no psyops directory at {}", dir.display());
-        return Ok(crate::Output::Empty);
-    }
+use super::query::SearchEndpoint;
+use super::{ForYou, PsyOp, Query};
 
-    let mut targets: Vec<String> = Vec::new();
-    for ent in std::fs::read_dir(&dir)? {
-        let ent = ent?;
-        let path = ent.path();
-        if !path.is_dir()
-            || !path.join("psyop.json").exists()
-            || !path.join(".git").exists()
-        {
-            continue;
-        }
-        let Some(name) = ent.file_name().to_str().map(|s| s.to_string()) else { continue };
+/// CLI entrypoint kept for `psyops::Commands::Run` — name + optional
+/// explicit commit override. The `commit_filter` is honored as a
+/// hard override on the on-disk psyop's HEAD commit.
+pub async fn run_all(
+    name_filter: Option<&str>,
+    commit_filter: Option<&str>,
+) -> Result<crate::Output, Error> {
+    let name = name_filter.ok_or_else(|| {
+        Error::Other("psyops run requires --name <psyop>".into())
+    })?;
+    run_psyop(name, commit_filter).await
+}
 
-        if let Some(want) = name_filter {
-            if name != want { continue; }
-        }
+pub async fn run_psyop(
+    name: &str,
+    commit_override: Option<&str>,
+) -> Result<crate::Output, Error> {
+    let psyop = super::psyop::load(name)?;
+    psyop.validate()?;
 
-        let commit_sha = (|| -> Result<String, git2::Error> {
-            let repo = git2::Repository::open(&path)?;
-            let head = repo.head()?.peel_to_commit()?;
-            Ok(head.id().to_string())
-        })().unwrap_or_default();
+    let commit = match commit_override {
+        Some(c) => c.to_string(),
+        None => derive_commit(name)?,
+    };
 
-        if let Some(want_commit) = commit_filter {
-            if commit_sha != want_commit {
-                eprintln!(
-                    "psyop \"{name}\" HEAD is {commit_sha}, not requested commit {want_commit}; skipping",
-                );
-                continue;
-            }
-        }
+    let db = Db::open()?;
+    let http = make_http_client()?;
 
-        // `--name` is an explicit operator request; override the disabled
-        // gate so a "disable then run standalone" workflow is possible.
-        if name_filter.is_none()
-            && cfg.psyops.get(&name).is_some_and(|o| o.disabled_for(&commit_sha))
-        {
-            eprintln!("psyop \"{name}\" is disabled for commit {commit_sha}; skipping");
-            continue;
-        }
+    // Capture whether the for_you_queue was non-empty at run start —
+    // the `query_when_for_you_queued` policy reads this on the
+    // re-loop iteration to decide whether queries are allowed.
+    let queue_at_start = db.for_you_queue(name, &commit)?;
+    let had_for_you_queued_at_start = !queue_at_start.is_empty();
+    let mut queries_already_ran = false;
 
-        targets.push(name);
-    }
-
-    if targets.is_empty() {
-        eprintln!("no enabled psyops to run");
-        return Ok(crate::Output::Empty);
-    }
-
-    // Names that errored out at any point this run (eligibility check,
-    // task panic, or run_psyop error). Once a psyop is in here it's
-    // permanently excluded from later rounds — re-running the same psyop
-    // round-after-round was producing the same error each time, wasting
-    // upstream calls. The set also drives the final exit code.
-    let mut failed: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    let mut round: u32 = 0;
     loop {
-        round += 1;
-        let mut eligible: Vec<String> = Vec::new();
-        for name in &targets {
-            if failed.contains(name) { continue; }
-            match has_enough_data(name) {
-                Ok(true) => eligible.push(name.clone()),
-                Ok(false) => {}
-                Err(e) => {
-                    eprintln!("psyop \"{name}\" eligibility check failed: {e}");
-                    failed.insert(name.clone());
-                }
-            }
-        }
-        if eligible.is_empty() {
-            if round == 1 {
-                eprintln!("no psyops have enough data to run");
-            } else {
-                eprintln!("round {round}: nothing eligible; stopping");
-            }
-            break;
-        }
-        eprintln!("round {round}: running {} psyop(s) concurrently", eligible.len());
+        // 1. Hydrate the for-you queue (drains everything currently in it).
+        hydrate_for_you(&db, &http, name, &commit).await?;
 
-        let handles: Vec<_> = eligible.into_iter().map(|name| {
-            tokio::spawn(async move {
-                let result = run_psyop(&name).await;
-                (name, result)
-            })
-        }).collect();
+        // 2. Read unscored tweets for this (psyop, commit).
+        let now = chrono::Utc::now();
+        let entries = db.list_unscored_with_origins(name, &commit, &now)?;
 
-        for join in futures::future::join_all(handles).await {
-            let (name, result) = join.unwrap();
-            match result {
-                Ok(_) => eprintln!("psyop \"{name}\" finished"),
-                Err(e) => {
-                    eprintln!("psyop \"{name}\" failed: {e}");
-                    failed.insert(name);
-                }
+        // 3. Filter with priority resolution.
+        let accepted = filter_with_priority(&psyop, entries)?;
+        eprintln!(
+            "psyop \"{name}\": {} accepted / {} min_posts / {} max_posts",
+            accepted.len(),
+            psyop.min_posts,
+            psyop.max_posts,
+        );
+
+        // 4. Eligibility — run queries if we're short.
+        if (accepted.len() as u64) < psyop.min_posts {
+            if queries_already_ran {
+                return Err(Error::Other(format!(
+                    "psyop \"{name}\": only {} accepted after running queries; min_posts is {}",
+                    accepted.len(), psyop.min_posts,
+                )));
             }
+            if !psyop.query_when_for_you_queued && had_for_you_queued_at_start {
+                return Err(Error::Other(format!(
+                    "psyop \"{name}\": only {} accepted; queries skipped because for_you queue was non-empty at start and query_when_for_you_queued = false",
+                    accepted.len(),
+                )));
+            }
+            run_queries(&psyop, &db, &http, name, &commit).await?;
+            queries_already_ran = true;
+            continue;
         }
+
+        // 5. Priority-bucket sort.
+        let final_list = bucket_sort(&psyop, accepted)?;
+
+        // 6. Trim to max_posts.
+        let trimmed: Vec<Tweet> = final_list
+            .into_iter()
+            .take(psyop.max_posts as usize)
+            .collect();
+        eprintln!(
+            "psyop \"{name}\": {} tweets ready to score",
+            trimmed.len(),
+        );
+
+        // 7. Scoring (todo: replace with real call to crate::score::score
+        //    and Db::set_scores in the next commit).
+        todo!("scoring not implemented yet — see follow-up commit. trimmed.len() = {}", trimmed.len());
     }
-
-    if !failed.is_empty() {
-        let mut sorted: Vec<&String> = failed.iter().collect();
-        sorted.sort();
-        return Err(crate::error::Error::Other(format!(
-            "{} psyop(s) failed: {}",
-            failed.len(),
-            sorted.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
-        )));
-    }
-
-    Ok(crate::Output::Empty)
 }
 
-/// Eligibility rules:
-///   - Every `Source` with `Some(count)` must have at least `count`
-///     eligible candidates pulled from *that* source.
-///   - The deduped union across sources must reach `max(2, psyop.count)`.
-fn has_enough_data(name: &str) -> Result<bool, crate::error::Error> {
-    let psyop_dir = crate::config::psyops_dir().join(name);
-    let psyop_path = psyop_dir.join("psyop.json");
-    if !psyop_path.exists() { return Ok(false); }
+// -- step 1: hydrate -------------------------------------------------------
 
-    let data = std::fs::read_to_string(&psyop_path)?;
-    let psyop: PsyOp = serde_json::from_str(&data)?;
-    psyop.validate()?;
-
-    let commit_sha = {
-        let repo = git2::Repository::open(&psyop_dir)?;
-        let head = repo.head()?.peel_to_commit()?;
-        head.id().to_string()
-    };
-
-    let now = chrono::Utc::now();
-    let db = crate::db::Db::open()?;
-    let mut union_size: u64 = 0;
-    let mut seen: HashSet<String> = HashSet::new();
-    for source in &psyop.sources {
-        let pool = collect_for_source(&db, name, &commit_sha, source, &now)?;
-        if let Some(target) = source.count {
-            if (pool.len() as u64) < target {
-                return Ok(false);
+async fn hydrate_for_you(
+    db: &Db,
+    http: &Http,
+    name: &str,
+    commit: &str,
+) -> Result<(), Error> {
+    let queued = db.for_you_queue(name, commit)?;
+    if queued.is_empty() {
+        return Ok(());
+    }
+    eprintln!(
+        "psyop \"{name}\": hydrating {} for_you_queue entries",
+        queued.len(),
+    );
+    let mut succeeded: Vec<String> = Vec::new();
+    for id in queued {
+        match fetch_tweet(http, &id).await {
+            Ok(Some(post)) => {
+                db.insert_post(&post, name, commit, &Origin::ForYou)?;
+                succeeded.push(id);
             }
-        }
-        for entry in pool {
-            if seen.insert(entry.post.id.clone()) {
-                union_size += 1;
+            Ok(None) => {
+                eprintln!("psyop \"{name}\": tweet id {id} not found, dropping from queue");
+                succeeded.push(id);   // unrecoverable — don't keep retrying
+            }
+            Err(e) => {
+                eprintln!("psyop \"{name}\": fetch failed for id {id}: {e}");
+                // leave in queue for next round
             }
         }
     }
-    Ok(union_size >= psyop.count.unwrap_or(0).max(2))
-}
-
-/// Run a single psyop end-to-end. Score the union of per-source candidates
-/// via the psyop's function, persist the scores, fire notifications.
-async fn run_psyop(name: &str) -> Result<(), crate::error::Error> {
-    let cfg = crate::config::load();
-    let psyop_dir = crate::config::psyops_dir().join(name);
-    let psyop_path = psyop_dir.join("psyop.json");
-    if !psyop_path.exists() {
-        return Err(crate::error::Error::PsyopNotFound(psyop_path.display().to_string()));
-    }
-
-    let data = std::fs::read_to_string(&psyop_path)?;
-    let psyop: PsyOp = serde_json::from_str(&data)?;
-    psyop.validate()?;
-
-    // Scope libgit2 handles tightly: they're !Send, so any await afterwards
-    // would poison the tokio::spawn future if we held them open.
-    let commit_sha = {
-        let repo = git2::Repository::open(&psyop_dir)?;
-        let head = repo.head()?.peel_to_commit()?;
-        head.id().to_string()
-    };
-
-    let now = chrono::Utc::now();
-    let db = crate::db::Db::open()?;
-
-    let mut entries: Vec<UnscoredEntry> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-    for source in &psyop.sources {
-        let pool = collect_for_source(&db, name, &commit_sha, source, &now)?;
-        for entry in pool {
-            if seen.insert(entry.post.id.clone()) {
-                entries.push(entry);
-            }
-        }
-    }
-
-    let mut scored_posts: Vec<crate::score::ScoredPost> = Vec::new();
-    if !entries.is_empty() {
-        scored_posts = crate::score::score(&psyop, entries)?;
-        let ids: Vec<String> = scored_posts.iter().map(|s| s.post.id.clone()).collect();
-        let scores: Vec<f64> = scored_posts.iter().map(|s| s.score).collect();
-        db.set_scores(name, &commit_sha, &ids, &scores, &psyop.tags)?;
-    }
-
-    let output: Vec<&crate::score::ScoredPost> = scored_posts.iter().collect();
-
-    let mut destinations = cfg.notifications.clone();
-    if let Some(per_psyop) = cfg.psyops.get(name) {
-        destinations.extend(per_psyop.notifications_for(&commit_sha).iter().cloned());
-    }
-    crate::notifications::destinations::notify(
-        &destinations,
-        crate::notifications::destinations::Subject::Psyop {
-            name,
-            psyop: &psyop,
-            output: &output,
-        },
-    ).await;
-
+    db.dequeue_for_you(name, commit, &succeeded)?;
     Ok(())
 }
 
-/// Pull `source.count` oldest unscored posts carrying `source.tag` for
-/// `(psyop, commit)`, then apply per-tweet eligibility (`valid_for_source`)
-/// and an over-fetch retry loop until the source's count is satisfied or
-/// the pool runs dry.
-fn collect_for_source(
-    db: &crate::db::Db,
-    psyop_name: &str,
-    commit_sha: &str,
-    source: &Source,
-    now: &chrono::DateTime<chrono::Utc>,
-) -> Result<Vec<UnscoredEntry>, crate::error::Error> {
-    let target = source.count.map(|n| n as usize);
-    let tags = vec![source.tag.clone()];
-    // Pull a generous over-fetch so per-tweet validation has room to
-    // discard ineligible candidates without going back to the DB.
-    let pull_limit = target.map(|t| t.saturating_mul(4).max(t + 16)).unwrap_or(usize::MAX / 4);
-    let raw = db.get_oldest_unscored_for_tags(psyop_name, commit_sha, &tags, source.min_score, pull_limit)?;
+// -- step 3: filter --------------------------------------------------------
 
-    let mut accepted: Vec<UnscoredEntry> = Vec::new();
-    for entry in raw {
-        let v = valid_for_source(
-            source,
-            &entry.post.created,
-            entry.post.likes,
-            entry.post.retweets,
-            entry.post.replies,
-            now,
-        );
-        if v.valid {
-            accepted.push(entry);
-            if let Some(t) = target {
-                if accepted.len() >= t { break; }
+struct Accepted {
+    tweet: Tweet,
+    /// Smallest `Some(_)` priority across this tweet's accepting
+    /// origins; `None` if no accepting origin had a priority set.
+    priority: Option<u64>,
+}
+
+fn filter_with_priority(
+    psyop: &PsyOp,
+    entries: Vec<(Tweet, Vec<Origin>)>,
+) -> Result<Vec<Accepted>, Error> {
+    let mut out = Vec::new();
+    for (tweet, origins) in entries {
+        let mut accepted_some_priority: Vec<Option<u64>> = Vec::new();
+        for origin in &origins {
+            let (filter, priority) = match origin_lookup(psyop, origin) {
+                Some(p) => p,
+                None => continue, // origin no longer present in psyop config
+            };
+            let passes = match filter {
+                Some(f) => f.evaluate(&tweet).map_err(Error::Other)?,
+                None => true,
+            };
+            if passes {
+                accepted_some_priority.push(priority);
+            }
+        }
+        if accepted_some_priority.is_empty() {
+            continue;
+        }
+        // Effective priority = smallest Some across all accepting
+        // origins; None only if every accepting origin had no priority.
+        let mut effective: Option<u64> = None;
+        for p in accepted_some_priority {
+            if let Some(p) = p {
+                effective = Some(match effective {
+                    None => p,
+                    Some(curr) => curr.min(p),
+                });
+            }
+        }
+        out.push(Accepted { tweet, priority: effective });
+    }
+    Ok(out)
+}
+
+fn origin_lookup<'a>(
+    psyop: &'a PsyOp,
+    origin: &Origin,
+) -> Option<(Option<&'a super::filter::Filter>, Option<u64>)> {
+    match origin {
+        Origin::ForYou => {
+            let f: &ForYou = &psyop.for_you;
+            Some((f.filter.as_ref(), f.priority))
+        }
+        Origin::Query(q) => {
+            let qs = psyop.queries.as_ref()?;
+            let matched: &Query = qs.iter().find(|qq| qq.query == *q)?;
+            Some((matched.filter.as_ref(), matched.priority))
+        }
+    }
+}
+
+// -- step 5: bucket sort ---------------------------------------------------
+
+fn bucket_sort(psyop: &PsyOp, accepted: Vec<Accepted>) -> Result<Vec<Tweet>, Error> {
+    let mut buckets: BTreeMap<u64, Vec<Tweet>> = BTreeMap::new();
+    let mut none_bucket: Vec<Tweet> = Vec::new();
+    for a in accepted {
+        match a.priority {
+            Some(p) => buckets.entry(p).or_default().push(a.tweet),
+            None    => none_bucket.push(a.tweet),
+        }
+    }
+    let mut final_list = Vec::new();
+    for (_p, bucket) in buckets {
+        final_list.extend(psyop.sort.evaluate(bucket).map_err(Error::Other)?);
+    }
+    final_list.extend(psyop.sort.evaluate(none_bucket).map_err(Error::Other)?);
+    Ok(final_list)
+}
+
+// -- step 4 helper: run queries -------------------------------------------
+
+async fn run_queries(
+    psyop: &PsyOp,
+    db: &Db,
+    http: &Http,
+    name: &str,
+    commit: &str,
+) -> Result<(), Error> {
+    let queries = match &psyop.queries {
+        Some(qs) if !qs.is_empty() => qs,
+        _ => return Ok(()),
+    };
+    for q in queries {
+        if !matches!(q.endpoint, SearchEndpoint::Recent) {
+            // `/2/tweets/search/all` is Pro/Enterprise only and not wired up
+            // yet — skip with a notice.
+            eprintln!("psyop \"{name}\": skipping query (endpoint != Recent): {}", q.query);
+            continue;
+        }
+        match search_recent(http, &q.query).await {
+            Ok(posts) => {
+                eprintln!("psyop \"{name}\": query \"{}\" returned {} tweets", q.query, posts.len());
+                for p in posts {
+                    db.insert_post(&p, name, commit, &Origin::Query(q.query.clone()))?;
+                }
+            }
+            Err(e) => {
+                eprintln!("psyop \"{name}\": query \"{}\" failed: {e}", q.query);
             }
         }
     }
-    Ok(accepted)
+    Ok(())
+}
+
+// -- X API --------------------------------------------------------------------
+
+fn make_http_client() -> Result<Http, Error> {
+    let bearer = std::env::var("X_BEARER_TOKEN").map_err(|_| {
+        Error::Other("X_BEARER_TOKEN env var is not set; required for psyop runtime".into())
+    })?;
+    Ok(Http::new(reqwest::Client::new(), None::<&str>, Some(bearer)))
+}
+
+fn standard_tweet_fields() -> Vec<TweetFields> {
+    vec![
+        TweetFields::CreatedAt,
+        TweetFields::PublicMetrics,
+        TweetFields::AuthorId,
+    ]
+}
+
+async fn fetch_tweet(http: &Http, id: &str) -> Result<Option<Post>, Error> {
+    use crate::x::tweets::id::get;
+    use crate::x::tweets::id::http::get as call;
+    let req = get::Request {
+        id: TweetId(id.to_string()),
+        tweet_fields: Some(standard_tweet_fields()),
+        expansions: Some(vec![TweetExpansions::AuthorId]),
+        user_fields: Some(vec![UserFields::Username]),
+        ..default_id_request()
+    };
+    let resp = call(http, &req).await.map_err(|e| {
+        Error::Other(format!("X /2/tweets/{id} failed: {e}"))
+    })?;
+    let tweet = match resp.data {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    Ok(Some(tweet_to_post(&tweet, resp.includes.as_ref())))
+}
+
+async fn search_recent(http: &Http, query: &str) -> Result<Vec<Post>, Error> {
+    use crate::x::tweets::search::recent::get;
+    use crate::x::tweets::search::recent::http::get as call;
+    let req = get::Request {
+        query: query.to_string(),
+        tweet_fields: Some(standard_tweet_fields()),
+        expansions: Some(vec![TweetExpansions::AuthorId]),
+        user_fields: Some(vec![UserFields::Username]),
+        max_results: Some(100),
+        ..default_recent_request()
+    };
+    let resp = call(http, &req).await.map_err(|e| {
+        Error::Other(format!("X /2/tweets/search/recent failed: {e}"))
+    })?;
+    let tweets = resp.data.unwrap_or_default();
+    Ok(tweets
+        .iter()
+        .map(|t| tweet_to_post(t, resp.includes.as_ref()))
+        .collect())
+}
+
+fn tweet_to_post(
+    t: &crate::x::types::Tweet,
+    includes: Option<&crate::x::types::Expansions>,
+) -> Post {
+    let id = t.id.as_ref().map(|i| i.0.clone()).unwrap_or_default();
+    let handle = lookup_handle(t, includes);
+    let created = t
+        .created_at
+        .map(|d| d.to_rfc3339())
+        .unwrap_or_default();
+    let (likes, retweets, replies, impressions) = match &t.public_metrics {
+        Some(m) => (
+            m.like_count    as u64,
+            m.retweet_count as u64,
+            m.reply_count   as u64,
+            m.impression_count as u64,
+        ),
+        None => (0, 0, 0, 0),
+    };
+    let text = t.text.as_ref().map(|tt| tt.0.clone()).unwrap_or_default();
+    Post {
+        id,
+        handle,
+        text,
+        images: Vec::new(),  // media expansion is a follow-up commit
+        videos: Vec::new(),
+        created,
+        likes,
+        retweets,
+        replies,
+        impressions,
+    }
+}
+
+fn lookup_handle(
+    t: &crate::x::types::Tweet,
+    includes: Option<&crate::x::types::Expansions>,
+) -> String {
+    let author_id = match &t.author_id {
+        Some(a) => &a.0,
+        None => return String::new(),
+    };
+    let users = match includes.and_then(|i| i.users.as_ref()) {
+        Some(u) => u,
+        None => return String::new(),
+    };
+    users
+        .iter()
+        .find(|u| u.id.0 == *author_id)
+        .map(|u| u.username.0.clone())
+        .unwrap_or_default()
+}
+
+// -- glue ---------------------------------------------------------------------
+
+fn derive_commit(name: &str) -> Result<String, Error> {
+    let dir = crate::config::psyops_dir().join(name);
+    let repo = git2::Repository::open(&dir).map_err(|e| {
+        Error::Other(format!("git open failed at {}: {e}", dir.display()))
+    })?;
+    let head = repo.head().and_then(|h| h.peel_to_commit()).map_err(|e| {
+        Error::Other(format!("git HEAD lookup failed: {e}"))
+    })?;
+    Ok(head.id().to_string())
+}
+
+fn default_id_request() -> crate::x::tweets::id::get::Request {
+    use crate::x::tweets::id::get::Request;
+    use crate::x::types::TweetId;
+    Request {
+        id: TweetId(String::new()),
+        tweet_fields: None,
+        expansions: None,
+        media_fields: None,
+        poll_fields: None,
+        user_fields: None,
+        place_fields: None,
+    }
+}
+
+fn default_recent_request() -> crate::x::tweets::search::recent::get::Request {
+    use crate::x::tweets::search::recent::get::Request;
+    Request {
+        query: String::new(),
+        start_time: None,
+        end_time: None,
+        since_id: None,
+        until_id: None,
+        max_results: None,
+        next_token: None,
+        pagination_token: None,
+        sort_order: None,
+        tweet_fields: None,
+        expansions: None,
+        media_fields: None,
+        poll_fields: None,
+        user_fields: None,
+        place_fields: None,
+    }
 }

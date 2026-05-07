@@ -34,22 +34,14 @@ pub enum Destination {
     WebSocket(websocket::WebSocket),
 }
 
-/// What's being notified about. Destinations format Psyop and Scrape
-/// subjects independently — text-mode renderers print a per-tweet line list
-/// for psyops and a single summary line for scrapes; JSON-mode renderers
-/// emit a tagged Body via `json_body::build`. Agent-intervention prompts
-/// are deliberately not modelled here — they're local stderr output, not
-/// remote notifications.
+/// What's being notified about. Text-mode renderers print a per-tweet
+/// line list; JSON-mode renderers emit a tagged Body via
+/// `json_body::build`.
 pub enum Subject<'a> {
     Psyop {
         name: &'a str,
         psyop: &'a PsyOp,
         output: &'a [&'a ScoredPost],
-    },
-    Scrape {
-        name: &'a str,
-        scrape: &'a Scrape,
-        collected: usize,
     },
 }
 
