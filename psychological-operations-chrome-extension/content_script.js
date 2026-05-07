@@ -1,84 +1,21 @@
-// Walk the X DOM and pull every currently-rendered tweet into a
-// JSON-serializable shape. Selectors are best-effort against the X
-// SPA — they're concentrated here so DOM churn is a single-file fix.
+// Walk the X DOM and pull every currently-rendered tweet's id. The
+// extension's only job is to announce "I saw this id in for-you";
+// the native-host bridge enqueues each id into for_you_queue and
+// the rust runtime later hydrates the rest (engagement counts,
+// text, media) via the X v2 API. Selectors are best-effort against
+// the X SPA — concentrated here so DOM churn is a single-file fix.
 
 (function () {
   if (window.__psyopContentScriptLoaded) return;
   window.__psyopContentScriptLoaded = true;
 
-  // Parse "12.3K" / "1.4M" / "42" → integer. Returns 0 if no digits found.
-  function parseCount(s) {
-    if (!s) return 0;
-    const m = String(s).replace(/,/g, "").match(/(\d+(?:\.\d+)?)\s*([KMB])?/i);
-    if (!m) return 0;
-    const n = parseFloat(m[1]);
-    const mult = { K: 1e3, M: 1e6, B: 1e9 }[(m[2] || "").toUpperCase()] || 1;
-    return Math.round(n * mult);
-  }
-
-  // Buttons inside a tweet have aria-labels containing the count, e.g.
-  // "12.3K Likes. Like". Find the button by its data-testid and parse.
-  function readMetric(article, testid) {
-    const el = article.querySelector(`[data-testid="${testid}"]`);
-    if (!el) return 0;
-    const label = el.getAttribute("aria-label") || el.textContent || "";
-    return parseCount(label);
-  }
-
-  // X renders the view counter as the "View post analytics" affordance,
-  // typically `[data-testid="analytics"]`, sometimes the older
-  // `<a href$="/analytics">` shape. Try both, fall back to the first
-  // descendant whose aria-label mentions a view count.
-  function readImpressions(article) {
-    const candidates = [
-      article.querySelector('[data-testid="analytics"]'),
-      article.querySelector('a[href$="/analytics"]'),
-    ].filter(Boolean);
-    for (const el of candidates) {
-      const label = el.getAttribute("aria-label") || el.textContent || "";
-      const n = parseCount(label);
-      if (n > 0) return n;
-    }
-    return 0;
-  }
-
   function extractOne(article) {
     // The permalink anchor inside the tweet — `/<handle>/status/<id>`.
-    let id = null, handle = null;
     for (const a of article.querySelectorAll('a[href*="/status/"]')) {
-      const m = a.getAttribute("href").match(/^\/([^/]+)\/status\/(\d+)/);
-      if (m) { handle = m[1]; id = m[2]; break; }
+      const m = a.getAttribute("href").match(/^\/[^/]+\/status\/(\d+)/);
+      if (m) return { id: m[1] };
     }
-    if (!id) return null;
-
-    // Text — concat all child runs of [data-testid="tweetText"].
-    const textEl = article.querySelector('[data-testid="tweetText"]');
-    const text = textEl ? textEl.innerText : "";
-
-    // Created — the <time> element's `datetime` attr is ISO 8601.
-    const timeEl = article.querySelector("time[datetime]");
-    const created = timeEl ? timeEl.getAttribute("datetime") : "";
-
-    // Engagement counts.
-    const likes       = readMetric(article, "like");
-    const retweets    = readMetric(article, "retweet");
-    const replies     = readMetric(article, "reply");
-    const impressions = readImpressions(article);
-
-    // Media — images from twimg media URLs; videos from <video> elements.
-    const images = Array.from(
-      article.querySelectorAll('img[src*="twimg.com/media/"]')
-    ).map((img) => ({ url: img.src }));
-
-    const videos = Array.from(article.querySelectorAll("video")).map((v) => ({
-      url: v.src || v.getAttribute("poster") || "",
-    })).filter((v) => v.url);
-
-    return {
-      id, handle, text, created,
-      likes, retweets, replies, impressions,
-      images, videos,
-    };
+    return null;
   }
 
   function extractTweets() {

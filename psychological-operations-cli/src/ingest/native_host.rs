@@ -12,15 +12,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::extract::IncomingTweet;
+use super::extract::IncomingPostId;
 use super::identity::{self, Identity};
-use crate::db::{Db, Origin};
+use crate::db::Db;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Inbound {
     Init,
-    Ingest { tweets: Vec<IncomingTweet> },
+    Ingest { tweets: Vec<IncomingPostId> },
 }
 
 #[derive(Debug, Serialize)]
@@ -90,7 +90,7 @@ pub async fn run() -> Result<crate::Output, crate::error::Error> {
 fn handle_ingest(
     db: &mut Option<Db>,
     identity: &Identity,
-    tweets: Vec<IncomingTweet>,
+    tweets: Vec<IncomingPostId>,
 ) -> Result<(usize, usize), crate::error::Error> {
     if db.is_none() {
         *db = Some(Db::open()?);
@@ -100,14 +100,14 @@ fn handle_ingest(
     let mut inserted = 0;
     let mut skipped = 0;
     for incoming in tweets {
-        let post = match incoming.into_post() {
-            Ok(p) => p,
+        let id = match incoming.into_id() {
+            Ok(s) => s,
             Err(_reason) => {
                 skipped += 1;
                 continue;
             }
         };
-        match db.insert_post(&post, &identity.psyop, &identity.commit, &Origin::ForYou) {
+        match db.enqueue_for_you(&id, &identity.psyop, &identity.commit) {
             Ok(true) => inserted += 1,
             Ok(false) => skipped += 1,
             Err(_) => skipped += 1,
