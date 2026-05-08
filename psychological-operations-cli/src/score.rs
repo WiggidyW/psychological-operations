@@ -213,6 +213,25 @@ fn run_function_execution(
         ))
     })?;
 
+    // Surface execution-level failures: a successful subprocess +
+    // present log file + parseable `output.output` is not the same
+    // as "scoring worked". When tasks fail, ObjectiveAI falls back
+    // to a uniform prior — silently, exit 0. Warn early so the
+    // fallback values aren't mistaken for real signal. The
+    // `Logs ID: <id>` line already on stdout provides traceability;
+    // we omit the id here to keep the warning byte-stable across runs.
+    if root.get("tasks_errors").and_then(|v| v.as_bool()) == Some(true) {
+        eprintln!(
+            "warning: objectiveai execution flagged tasks_errors \
+             (one or more tasks errored — output is likely a fallback)"
+        );
+    }
+    if let Some(err) = root.get("error").filter(|v| !v.is_null()) {
+        let body = serde_json::to_string(err)
+            .unwrap_or_else(|_| err.to_string());
+        eprintln!("warning: objectiveai execution error: {body}");
+    }
+
     let inner = root.get("output").and_then(|o| o.get("output")).cloned()
         .ok_or_else(|| crate::error::Error::ObjectiveAiCli(format!(
             "execution log {} missing [\"output\"][\"output\"]", log_path.display(),
