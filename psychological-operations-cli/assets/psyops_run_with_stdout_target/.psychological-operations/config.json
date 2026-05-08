@@ -1,0 +1,5 @@
+{
+  "targets": [
+    { "type": "stdout", "mode": "urls_with_scores" }
+  ]
+}
