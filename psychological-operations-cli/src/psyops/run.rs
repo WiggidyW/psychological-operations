@@ -68,7 +68,7 @@ pub async fn run_psyop(
     };
 
     let db = Db::open()?;
-    let http = make_http_client()?;
+    let http = make_http_client().await?;
 
     // Capture whether the for_you_queue was non-empty at run start —
     // the `query_when_for_you_queued` policy reads this on the
@@ -423,11 +423,8 @@ async fn run_queries(
 
 // -- X API --------------------------------------------------------------------
 
-fn make_http_client() -> Result<Http, Error> {
-    let bearer = std::env::var("X_BEARER_TOKEN").map_err(|_| {
-        Error::Other("X_BEARER_TOKEN env var is not set; required for psyop runtime".into())
-    })?;
-    Ok(Http::new(reqwest::Client::new(), None::<&str>, Some(bearer)))
+async fn make_http_client() -> Result<Http, Error> {
+    Http::app_only(reqwest::Client::new()).await
 }
 
 fn standard_tweet_fields() -> Vec<TweetFields> {

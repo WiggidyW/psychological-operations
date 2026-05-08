@@ -48,6 +48,48 @@ pub fn save(psyop: &str, tokens: &Tokens) -> Result<(), Error> {
     Ok(())
 }
 
+/// Load tokens for `psyop`; if expired or expiring within 5
+/// minutes, refresh via the X token endpoint using `client_id` /
+/// `client_secret` from `x_app.json`, persist the rotated tokens,
+/// and return them. The 5-minute buffer guards against a token
+/// expiring mid-request after we just decided it was fresh.
+///
+/// Errors:
+///   - tokens file missing → "run `psychological-operations psyops oauth <psyop>`"
+///   - refresh_token absent (shouldn't happen — we always request
+///     `offline.access`) → re-auth required
+///   - refresh failed (X invalidated the token, scope changed,
+///     etc.) → re-auth required
+pub async fn load_fresh(
+    psyop: &str,
+    client_id: &str,
+    client_secret: &str,
+) -> Result<Tokens, Error> {
+    let existing = load(psyop)?.ok_or_else(|| Error::Other(format!(
+        "no tokens for psyop \"{psyop}\" — \
+         run `psychological-operations psyops oauth {psyop}`",
+    )))?;
+
+    let buffer = Duration::seconds(300);
+    if existing.expires_at > Utc::now() + buffer {
+        return Ok(existing);
+    }
+
+    let refresh_token = existing.refresh_token.as_deref().ok_or_else(|| Error::Other(format!(
+        "tokens for psyop \"{psyop}\" have no refresh_token — \
+         re-run `psychological-operations psyops oauth {psyop}`",
+    )))?;
+
+    let refreshed = refresh(client_id, client_secret, refresh_token).await
+        .map_err(|e| Error::Other(format!(
+            "refresh for psyop \"{psyop}\" failed: {e} — \
+             re-run `psychological-operations psyops oauth {psyop}`",
+        )))?;
+
+    save(psyop, &refreshed)?;
+    Ok(refreshed)
+}
+
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
     access_token:  String,

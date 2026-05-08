@@ -26,7 +26,9 @@ pub struct Http {
 
 impl Http {
     /// Construct a new client. `base_url` defaults to
-    /// `https://api.x.com/2` when `None`.
+    /// `https://api.x.com/2` when `None`. Low-level — most callers
+    /// should use `app_only` or `for_psyop` so auth is resolved
+    /// from disk automatically.
     pub fn new(
         client: Client,
         base_url: Option<impl Into<String>>,
@@ -39,6 +41,45 @@ impl Http {
                 .unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
             bearer_token: bearer_token.map(|t| Arc::new(t.into())),
         }
+    }
+
+    /// Construct an Http for app-only use. Reads
+    /// `x_app.json::bearer_token`. Use this for read-only endpoints
+    /// (search, tweet lookup) — anything that doesn't need to act
+    /// as a specific user.
+    pub async fn app_only(client: Client) -> Result<Self, crate::error::Error> {
+        let cfg = crate::x_app::config::load()?;
+        let bearer = cfg.bearer_token.ok_or_else(|| {
+            crate::error::Error::Other(
+                "x_app.json has no bearer_token — re-run \
+                 `psychological-operations x_app setup` and capture it".into(),
+            )
+        })?;
+        Ok(Self::new(client, None::<&str>, Some(bearer)))
+    }
+
+    /// Construct an Http authorized as the per-psyop X user. Reads
+    /// `tokens/<psyop>.json`; refreshes silently via
+    /// `oauth::tokens::load_fresh` if the access token is expired
+    /// or expiring within 5 minutes (uses `x_app.json`'s
+    /// `client_id` / `client_secret` for the refresh, persists the
+    /// rotated tokens back).
+    ///
+    /// Use for write endpoints (likes, retweets) and any read
+    /// endpoint that needs user-context scope.
+    pub async fn for_psyop(
+        client: Client,
+        psyop_name: &str,
+    ) -> Result<Self, crate::error::Error> {
+        let cfg = crate::x_app::config::ensure_setup()?;
+        let client_id = cfg.client_id
+            .expect("ensure_setup guarantees client_id");
+        let client_secret = cfg.client_secret
+            .expect("ensure_setup guarantees client_secret");
+        let tokens = crate::oauth::tokens::load_fresh(
+            psyop_name, &client_id, &client_secret,
+        ).await?;
+        Ok(Self::new(client, None::<&str>, Some(tokens.access_token)))
     }
 
     /// Build a `RequestBuilder` for `path` with auth attached. `path`
