@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 
+use crate::billing;
 use crate::chrome;
 use crate::ingest;
 use crate::invent;
@@ -50,6 +51,11 @@ enum Commands {
         #[arg(long)]
         commit: Option<String>,
     },
+    /// Master billing-account / X developer-app setup.
+    Billing {
+        #[command(subcommand)]
+        command: billing::Commands,
+    },
 }
 
 pub enum Output {
@@ -82,6 +88,7 @@ where
         Commands::Invent { command } => command.handle(),
         Commands::NativeHost => ingest::run().await,
         Commands::Browse { psyop, commit } => chrome::browse(psyop, commit).await,
+        Commands::Billing { command } => command.handle().await,
     }
     .map_err(|e| e.to_string())?;
     Ok(output.to_string())

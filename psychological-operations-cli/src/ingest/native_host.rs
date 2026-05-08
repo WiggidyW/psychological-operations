@@ -14,6 +14,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::extract::IncomingPostId;
 use super::identity::{self, Identity};
+use crate::billing::config::{self as billing_config, BillingConfig};
 use crate::db::Db;
 
 #[derive(Debug, Deserialize)]
@@ -21,6 +22,21 @@ use crate::db::Db;
 enum Inbound {
     Init,
     Ingest { tweets: Vec<IncomingPostId> },
+    BillingSave { credentials: IncomingCredentials },
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct IncomingCredentials {
+    #[serde(default)]
+    client_id: Option<String>,
+    #[serde(default)]
+    client_secret: Option<String>,
+    #[serde(default)]
+    api_key: Option<String>,
+    #[serde(default)]
+    api_key_secret: Option<String>,
+    #[serde(default)]
+    bearer_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -30,6 +46,8 @@ enum Outbound<'a> {
     InitErr { error: String },
     IngestOk { inserted: usize, skipped: usize },
     IngestErr { error: String },
+    BillingSaveOk,
+    BillingSaveErr { error: String },
 }
 
 pub async fn run() -> Result<crate::Output, crate::error::Error> {
@@ -80,6 +98,10 @@ pub async fn run() -> Result<crate::Output, crate::error::Error> {
                     Err(e) => Outbound::IngestErr { error: e.to_string() },
                 },
             },
+            Ok(Inbound::BillingSave { credentials }) => match handle_billing_save(credentials) {
+                Ok(()) => Outbound::BillingSaveOk,
+                Err(e) => Outbound::BillingSaveErr { error: e.to_string() },
+            },
         };
 
         write_frame(&mut stdout, &reply).await?;
@@ -114,6 +136,24 @@ fn handle_ingest(
         }
     }
     Ok((inserted, skipped))
+}
+
+/// Merge incoming credentials into the on-disk billing.json.
+/// Some-wins, None-preserves so a partial DOM scrape doesn't
+/// clobber previously-captured fields.
+fn handle_billing_save(creds: IncomingCredentials) -> Result<(), crate::error::Error> {
+    let existing = billing_config::load().unwrap_or_default();
+    let now = chrono::Utc::now().to_rfc3339();
+    let incoming = BillingConfig {
+        client_id:      creds.client_id,
+        client_secret:  creds.client_secret,
+        api_key:        creds.api_key,
+        api_key_secret: creds.api_key_secret,
+        bearer_token:   creds.bearer_token,
+        saved_at:       Some(now),
+    };
+    let merged = billing_config::merge(existing, incoming);
+    billing_config::save(&merged)
 }
 
 async fn write_frame<W: tokio::io::AsyncWrite + Unpin>(

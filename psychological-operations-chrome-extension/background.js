@@ -71,5 +71,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  if (msg.kind === "popup_billing_save") {
+    send({ kind: "billing_save", credentials: msg.credentials })
+      .then((reply) => sendResponse(reply))
+      .catch((e) => sendResponse({ kind: "billing_save_err", error: String(e.message || e) }));
+    return true;
+  }
+
   return false;
 });
