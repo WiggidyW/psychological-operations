@@ -5,6 +5,30 @@ An agent that uses computer use to browse [X](https://x.com), searching for twee
 
 ## Install
 
+psychological-operations shells out to the [`objectiveai`](https://github.com/ObjectiveAI/objectiveai) CLI for all scoring API calls, so it must be installed and on `PATH`. Install both:
+
+### 1. ObjectiveAI CLI (prerequisite)
+
+Install the pre-built binary with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ObjectiveAI/objectiveai/main/install.sh | bash
+. "$HOME/.objectiveai/env"
+```
+
+Leaner, no-viewer build:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ObjectiveAI/objectiveai/main/install.sh | bash -s -- --no-viewer
+. "$HOME/.objectiveai/env"
+```
+
+Sourcing `~/.objectiveai/env` puts `objectiveai` on `PATH` for the current shell. New shells pick it up automatically (the installer wires `~/.bashrc` / `~/.zshrc` to source the same file).
+
+Supported platforms: Linux x86_64, Linux aarch64 (Raspberry Pi 4+, Graviton), macOS x86_64, macOS aarch64 (Apple Silicon), Windows x86_64. The installer drops the binary at `~/.objectiveai/objectiveai`; the CLI self-updates on startup from [GitHub Releases](https://github.com/ObjectiveAI/objectiveai/releases).
+
+### 2. psychological-operations CLI
+
 Install the pre-built binary with one command:
 
 ```bash
@@ -16,7 +40,7 @@ Sourcing `~/.psychological-operations/env` puts `psychological-operations` on `P
 
 Supported platforms: Linux x86_64, macOS x86_64, macOS aarch64 (Apple Silicon), Windows x86_64. The installer drops the binary at `~/.psychological-operations/psychological-operations`, fetched from [GitHub Releases](https://github.com/WiggidyW/psychological-operations/releases).
 
-### From source
+#### From source
 
 ```bash
 git clone https://github.com/WiggidyW/psychological-operations.git
@@ -51,7 +75,6 @@ The project is split into two packages:
 
 - **Rust** toolchain (stable)
 - **Node.js** (for the Playwright wrapper)
-- **`objectiveai` CLI** in PATH
 - **Windows**: Windows 10 build 17063 or later
 - **macOS / Linux**: Any modern version
 
