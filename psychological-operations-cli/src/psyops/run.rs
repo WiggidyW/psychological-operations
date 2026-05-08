@@ -46,6 +46,7 @@ use super::{ForYou, PsyOp, Query};
 pub async fn run_all(
     name_filter: Option<&str>,
     commit_filter: Option<&str>,
+    seed: Option<i64>,
     cfg: &crate::run::Config,
 ) -> Result<crate::Output, Error> {
     if !cfg.mock_x_api {
@@ -55,12 +56,13 @@ pub async fn run_all(
     let name = name_filter.ok_or_else(|| {
         Error::Other("psyops run requires --name <psyop>".into())
     })?;
-    run_psyop(name, commit_filter, cfg).await
+    run_psyop(name, commit_filter, seed, cfg).await
 }
 
 pub async fn run_psyop(
     name: &str,
     commit_override: Option<&str>,
+    seed: Option<i64>,
     cfg: &crate::run::Config,
 ) -> Result<crate::Output, Error> {
     let psyop = super::psyop::load(name, None, cfg)?;
@@ -128,7 +130,7 @@ pub async fn run_psyop(
 
         // 7. Hydrate Tweet -> Post by joining with the `contents`
         //    table, then run the multi-stage scoring pipeline.
-        let result = score_pipeline(&db, &psyop, name, trimmed, cfg)?;
+        let result = score_pipeline(&db, &psyop, name, trimmed, seed, cfg)?;
 
         // 8. Persist scores for every scored post.
         if !result.last_scores.is_empty() {
@@ -191,6 +193,7 @@ fn score_pipeline(
     psyop: &PsyOp,
     name: &str,
     trimmed: Vec<Tweet>,
+    seed: Option<i64>,
     cfg: &crate::run::Config,
 ) -> Result<ScoreResult, Error> {
     // Hydrate Tweet -> Post via contents lookup. Tweets whose
@@ -237,7 +240,7 @@ fn score_pipeline(
             break;
         }
 
-        let scored: Vec<ScoredPost> = score::score(stage, current, cfg)?;
+        let scored: Vec<ScoredPost> = score::score(stage, current, seed, cfg)?;
         for s in &scored {
             last_scores.insert(s.post.id.clone(), s.score);
         }

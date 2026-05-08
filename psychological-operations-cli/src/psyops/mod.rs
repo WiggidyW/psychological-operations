@@ -64,6 +64,10 @@ pub enum Commands {
         name: Option<String>,
         #[arg(long, requires = "name")]
         commit: Option<String>,
+        /// Pass-through to `objectiveai` for deterministic mock
+        /// outputs. Used by integration tests; optional otherwise.
+        #[arg(long)]
+        seed: Option<i64>,
     },
     /// Open chromium for each psyop in turn so the operator can
     /// scroll x.com / capture tweets via the extension. Blocks on
@@ -128,7 +132,7 @@ impl Commands {
             Commands::Enable { name, commit } => set_disabled(&name, commit.as_deref(), false, cfg),
             Commands::Disable { name, commit } => set_disabled(&name, commit.as_deref(), true, cfg),
             Commands::Publish { args } => publish(args, cfg),
-            Commands::Run { name, commit } => run::run_all(name.as_deref(), commit.as_deref(), cfg).await,
+            Commands::Run { name, commit, seed } => run::run_all(name.as_deref(), commit.as_deref(), seed, cfg).await,
             Commands::Browse { name, commit } => browse::run(name.as_deref(), commit.as_deref(), cfg).await,
             Commands::Targets { command } => command.handle(cfg),
             Commands::OAuth { name } => crate::oauth::setup::run(&name, cfg).await,

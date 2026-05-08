@@ -5,3 +5,9 @@ dist/
 target/
 embed/
 .logs/
+
+# Integration tests: per-test runtime dirs, shared objectiveai state,
+# and per-process binary build dirs. Mutations stay out of git.
+psychological-operations-cli/tests/.psychological-operations-*/
+psychological-operations-cli/tests/.objectiveai/
+psychological-operations-cli/tests/.target-binaries/

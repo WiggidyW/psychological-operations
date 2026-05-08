@@ -127,6 +127,7 @@ fn run_function_execution(
     input_json: &str,
     split: bool,
     invert: bool,
+    seed: Option<i64>,
     cfg: &crate::run::Config,
 ) -> Result<ExecutionOutput, crate::error::Error> {
     let function_json = serde_json::to_string(function)?;
@@ -162,6 +163,10 @@ fn run_function_execution(
     }
     if invert {
         args.push("--invert".to_string());
+    }
+    if let Some(s) = seed {
+        args.push("--seed".to_string());
+        args.push(s.to_string());
     }
 
     let output = std::process::Command::new(objectiveai_binary(cfg))
@@ -233,7 +238,7 @@ fn objectiveai_logs_dir() -> std::path::PathBuf {
 
 /// Run a single stage's function execution against the given posts.
 /// Returns scored posts in score-descending order.
-pub fn score(stage: &Stage, posts: Vec<Post>, cfg: &crate::run::Config) -> Result<Vec<ScoredPost>, crate::error::Error> {
+pub fn score(stage: &Stage, posts: Vec<Post>, seed: Option<i64>, cfg: &crate::run::Config) -> Result<Vec<ScoredPost>, crate::error::Error> {
     let mut scored: Vec<ScoredPost> = posts.into_iter()
         .map(|p| ScoredPost { post: p, score: 0.0 })
         .collect();
@@ -254,7 +259,7 @@ pub fn score(stage: &Stage, posts: Vec<Post>, cfg: &crate::run::Config) -> Resul
         (serde_json::to_string(&items)?, true)
     };
 
-    let result = run_function_execution(&function, &stage.profile, &stage.strategy, &input_json, split, stage.invert, cfg)?;
+    let result = run_function_execution(&function, &stage.profile, &stage.strategy, &input_json, split, stage.invert, seed, cfg)?;
 
     let scores: Vec<f64> = result.output.as_array()
         .ok_or_else(|| crate::error::Error::Other("expected array output".into()))?

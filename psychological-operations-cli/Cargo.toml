@@ -35,3 +35,7 @@ envconfig = "0.11.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
+
+[dev-dependencies]
+# Integration tests open the per-test data.db for assertions.
+rusqlite = { version = "0.39.0", features = ["bundled"] }
