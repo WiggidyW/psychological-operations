@@ -5,6 +5,7 @@ pub mod types;
 pub mod params;
 pub mod error;
 pub mod http;
+pub mod mock;
 
 pub use error::Error;
 

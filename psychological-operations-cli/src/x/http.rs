@@ -22,6 +22,9 @@ pub struct Http {
     pub client: Client,
     pub base_url: String,
     pub bearer_token: Option<Arc<String>>,
+    /// When true, every `send*` short-circuits to
+    /// `crate::x::mock::*` instead of hitting the real X API.
+    pub mock: bool,
 }
 
 impl Http {
@@ -40,6 +43,18 @@ impl Http {
                 .map(Into::into)
                 .unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
             bearer_token: bearer_token.map(|t| Arc::new(t.into())),
+            mock: false,
+        }
+    }
+
+    /// Helper for the mock factories — produces an Http that holds
+    /// no token and short-circuits every `send*` to the mock layer.
+    fn new_mock(client: Client) -> Self {
+        Self {
+            client,
+            base_url: DEFAULT_BASE_URL.to_string(),
+            bearer_token: None,
+            mock: true,
         }
     }
 
@@ -47,10 +62,16 @@ impl Http {
     /// `x_app.json::bearer_token`. Use this for read-only endpoints
     /// (search, tweet lookup) — anything that doesn't need to act
     /// as a specific user.
+    ///
+    /// In mock mode, skips the `x_app.json` read entirely and
+    /// returns an Http that mocks every send.
     pub async fn app_only(
         client: Client,
         cfg: &crate::run::Config,
     ) -> Result<Self, crate::error::Error> {
+        if cfg.mock_x_api {
+            return Ok(Self::new_mock(client));
+        }
         let x_app = crate::x_app::config::load(cfg)?;
         let bearer = x_app.bearer_token.ok_or_else(|| {
             crate::error::Error::Other(
@@ -75,6 +96,9 @@ impl Http {
         psyop_name: &str,
         cfg: &crate::run::Config,
     ) -> Result<Self, crate::error::Error> {
+        if cfg.mock_x_api {
+            return Ok(Self::new_mock(client));
+        }
         let x_app = crate::x_app::config::ensure_setup(cfg)?;
         let client_id = x_app.client_id
             .expect("ensure_setup guarantees client_id");
@@ -118,6 +142,9 @@ impl Http {
         T: DeserializeOwned,
         Q: Serialize + ?Sized,
     {
+        if self.mock {
+            return crate::x::mock::send_with_query(method, path, query);
+        }
         let rb = self.request(method, path).query(query);
         Self::execute_unary(rb).await
     }
@@ -134,6 +161,9 @@ impl Http {
         T: DeserializeOwned,
         B: Serialize + ?Sized,
     {
+        if self.mock {
+            return crate::x::mock::send(method, path, body);
+        }
         let mut rb = self.request(method, path);
         if let Some(b) = body {
             rb = rb.json(b);
@@ -152,6 +182,9 @@ impl Http {
     where
         Q: Serialize + ?Sized,
     {
+        if self.mock {
+            return crate::x::mock::send_with_query_no_response(method, path, query);
+        }
         let response = self
             .request(method, path)
             .query(query)
@@ -180,6 +213,9 @@ impl Http {
         Q: Serialize + ?Sized,
         B: Serialize + ?Sized,
     {
+        if self.mock {
+            return crate::x::mock::send_with_query_and_body(method, path, query, body);
+        }
         let rb = self.request(method, path).query(query).json(body);
         Self::execute_unary(rb).await
     }
@@ -195,6 +231,9 @@ impl Http {
     where
         B: Serialize + ?Sized,
     {
+        if self.mock {
+            return crate::x::mock::send_no_response(method, path, body);
+        }
         let mut rb = self.request(method, path);
         if let Some(b) = body {
             rb = rb.json(b);

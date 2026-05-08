@@ -17,19 +17,27 @@ use crate::psyops;
 struct EnvConfigBuilder {
     #[envconfig(from = "PSYCHOLOGICAL_OPERATIONS_BASE_DIR")]
     base_dir: Option<String>,
+    #[envconfig(from = "PSYCHOLOGICAL_OPERATIONS_MOCK_X_API")]
+    mock_x_api: Option<String>,
 }
 
 impl EnvConfigBuilder {
     pub fn build(self) -> ConfigBuilder {
+        fn parse_bool(s: &str) -> bool {
+            let v = s.trim();
+            !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false")
+        }
         ConfigBuilder {
-            base_dir: self.base_dir,
+            base_dir:   self.base_dir,
+            mock_x_api: self.mock_x_api.map(|s| parse_bool(&s)),
         }
     }
 }
 
 #[derive(Default)]
 pub struct ConfigBuilder {
-    pub base_dir: Option<String>,
+    pub base_dir:   Option<String>,
+    pub mock_x_api: Option<bool>,
 }
 
 impl Envconfig for ConfigBuilder {
@@ -51,13 +59,20 @@ impl Envconfig for ConfigBuilder {
 
 impl ConfigBuilder {
     pub fn build(self) -> Config {
-        Config { base_dir: self.base_dir }
+        Config {
+            base_dir:   self.base_dir,
+            mock_x_api: self.mock_x_api.unwrap_or(false),
+        }
     }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Config {
-    pub base_dir: Option<String>,
+    pub base_dir:   Option<String>,
+    /// When true, every X HTTP call short-circuits to a
+    /// deterministic mock keyed on the input. Set via
+    /// `PSYCHOLOGICAL_OPERATIONS_MOCK_X_API`.
+    pub mock_x_api: bool,
 }
 
 impl Config {

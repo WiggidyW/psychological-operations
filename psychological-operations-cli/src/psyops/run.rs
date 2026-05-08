@@ -48,7 +48,9 @@ pub async fn run_all(
     commit_filter: Option<&str>,
     cfg: &crate::run::Config,
 ) -> Result<crate::Output, Error> {
-    crate::x_app::config::ensure_setup(cfg)?;
+    if !cfg.mock_x_api {
+        crate::x_app::config::ensure_setup(cfg)?;
+    }
 
     let name = name_filter.ok_or_else(|| {
         Error::Other("psyops run requires --name <psyop>".into())

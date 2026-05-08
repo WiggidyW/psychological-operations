@@ -38,4 +38,10 @@ pub enum Error {
     /// blew up.
     #[error("deserialization error: {0}")]
     Deserialize(#[from] serde_path_to_error::Error<serde_json::Error>),
+
+    /// Catch-all for non-categorized errors (mock-x-api dispatch
+    /// failures, etc.). Prefer the typed variants above when one
+    /// fits.
+    #[error("{0}")]
+    Other(String),
 }
