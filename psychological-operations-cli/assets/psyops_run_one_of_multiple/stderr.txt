@@ -5,4 +5,4 @@ psyop "target-psyop": 4 posts hydrated and entering scoring
 Scoring 4 posts...
 psyop "target-psyop": scored 4 posts (4 survived all 1 stages)
 psyop "target-psyop": dropped 0 contents row(s) post-scoring
-psyop "target-psyop": delivered 0 of 0 pending (0 failed)
+psyop "target-psyop": delivered 2 of 2 pending (0 failed)

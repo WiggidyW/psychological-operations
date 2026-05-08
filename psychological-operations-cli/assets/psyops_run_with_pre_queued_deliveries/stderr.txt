@@ -5,4 +5,4 @@ psyop "test-psyop": 5 posts hydrated and entering scoring
 Scoring 5 posts...
 psyop "test-psyop": scored 5 posts (5 survived all 1 stages)
 psyop "test-psyop": dropped 0 contents row(s) post-scoring
-psyop "test-psyop": delivered 1 of 1 pending (0 failed)
+psyop "test-psyop": delivered 3 of 3 pending (0 failed)
