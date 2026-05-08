@@ -59,10 +59,6 @@ fn main() {
         embed_dir.join("extension.tar").display(),
     );
     println!(
-        "cargo:rustc-env=PSYOPS_EXTENSION_CRX_PATH={}",
-        embed_dir.join("extension.crx").display(),
-    );
-    println!(
         "cargo:rustc-env=PSYOPS_EXTENSION_ID_PATH={}",
         embed_dir.join("extension-id.txt").display(),
     );

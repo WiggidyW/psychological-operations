@@ -1,7 +1,6 @@
 use serde::Serialize;
 
 use crate::db::MediaUrl;
-use crate::score::ScoredPost;
 
 use super::Subject;
 
@@ -64,6 +63,3 @@ pub fn lines(subject: &Subject) -> (String, Vec<(String, String)>) {
     }
 }
 
-// Lifetimes needed by ScoredPost reference imports above.
-#[allow(dead_code)]
-fn _phantom(_: &ScoredPost) {}

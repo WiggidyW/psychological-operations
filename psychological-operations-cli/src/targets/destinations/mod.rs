@@ -49,10 +49,8 @@ pub enum Subject<'a> {
     },
 }
 
-/// Dispatch one destination. `dispatch` calls this in
-/// parallel-join + swallows errors; the `targets deliver` path
-/// calls it row-by-row + captures errors to bump / delete the
-/// queue.
+/// Dispatch one destination. Used by `targets::drain_queue`
+/// row-by-row, capturing errors to bump / delete the queued row.
 pub async fn send_one(
     dest: &Destination,
     subject: &Subject<'_>,
@@ -67,15 +65,5 @@ pub async fn send_one(
         Destination::Exec(cfg) => exec::send(cfg, subject).await,
         Destination::WebSocket(cfg) => websocket::send(cfg, subject).await,
         Destination::X(cfg) => x::send(cfg, subject).await,
-    }
-}
-
-pub async fn dispatch(destinations: &[Destination], subject: Subject<'_>) {
-    let subject_ref = &subject;
-    let futs = destinations.iter().map(|dest| send_one(dest, subject_ref));
-    for result in futures::future::join_all(futs).await {
-        if let Err(e) = result {
-            eprintln!("delivery failed: {e}");
-        }
     }
 }

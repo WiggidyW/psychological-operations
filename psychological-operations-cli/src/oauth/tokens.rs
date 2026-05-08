@@ -97,8 +97,6 @@ struct TokenResponse {
     refresh_token: Option<String>,
     expires_in:    i64,
     scope:         String,
-    #[allow(dead_code)]
-    token_type:    Option<String>,
 }
 
 fn basic_auth_header(client_id: &str, client_secret: &str) -> String {

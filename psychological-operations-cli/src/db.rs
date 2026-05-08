@@ -492,29 +492,6 @@ impl Db {
         Ok(self.conn.last_insert_rowid())
     }
 
-    /// Persist a single failed delivery so it can be retried later.
-    /// Caller serializes the destination + the post IDs the delivery
-    /// was acting on. `last_attempt_at` is stamped to now. Returns
-    /// the new row's `id`.
-    pub fn enqueue_delivery_failure(
-        &self,
-        psyop: &str,
-        psyop_commit_sha: &str,
-        target_json: &str,
-        post_ids_json: &str,
-        last_error: &str,
-    ) -> Result<i64, crate::error::Error> {
-        let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute(
-            "INSERT INTO delivery_queue
-                (psyop, psyop_commit_sha, target_json, post_ids_json,
-                 attempts, last_error, last_attempt_at)
-             VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)",
-            params![psyop, psyop_commit_sha, target_json, post_ids_json, last_error, now],
-        )?;
-        Ok(self.conn.last_insert_rowid())
-    }
-
     /// Reap `contents` for every post under (psyop, commit). Idempotent;
     /// safe after `set_scores` (which already drops content for the
     /// scored ids — this catches unscored posts whose content would

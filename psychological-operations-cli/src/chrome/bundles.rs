@@ -7,7 +7,6 @@
 
 pub const CHROME_BUNDLE: &[u8] = include_bytes!(env!("PSYOPS_CHROME_BUNDLE_PATH"));
 pub const EXTENSION_TAR: &[u8] = include_bytes!(env!("PSYOPS_EXTENSION_TAR_PATH"));
-pub const EXTENSION_CRX: &[u8] = include_bytes!(env!("PSYOPS_EXTENSION_CRX_PATH"));
 
 /// 32-char extension ID derived from the SPKI public key in
 /// `psychological-operations-chrome/extension-key.pem`. Stable across

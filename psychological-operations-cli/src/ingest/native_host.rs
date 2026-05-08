@@ -9,7 +9,6 @@
 //! EOF and exit cleanly.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::extract::IncomingPostId;
@@ -168,7 +167,3 @@ async fn write_frame<W: tokio::io::AsyncWrite + Unpin>(
     Ok(())
 }
 
-// Quiet `serde_json::Value` import warning if we ever add diagnostic
-// JSON inspection later.
-#[allow(dead_code)]
-fn _v(_: Value) {}
