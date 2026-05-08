@@ -56,6 +56,20 @@ const SCHEMA: &str = "
     );
     CREATE INDEX IF NOT EXISTS for_you_queue_by_psyop
         ON for_you_queue(psyop, psyop_commit_sha);
+
+    CREATE TABLE IF NOT EXISTS delivery_queue (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        psyop             TEXT    NOT NULL,
+        psyop_commit_sha  TEXT    NOT NULL,
+        target_json       TEXT    NOT NULL,
+        post_ids_json     TEXT    NOT NULL,
+        attempts          INTEGER NOT NULL DEFAULT 1,
+        last_error        TEXT    NOT NULL,
+        last_attempt_at   TEXT    NOT NULL,
+        created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS delivery_queue_by_psyop
+        ON delivery_queue(psyop, psyop_commit_sha);
 ";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -457,4 +471,112 @@ impl Db {
         tx.commit()?;
         Ok(())
     }
+
+    /// Persist a single failed delivery so it can be retried later.
+    /// Caller serializes the destination + the post IDs the delivery
+    /// was acting on. `last_attempt_at` is stamped to now. Returns
+    /// the new row's `id`.
+    pub fn enqueue_delivery_failure(
+        &self,
+        psyop: &str,
+        psyop_commit_sha: &str,
+        target_json: &str,
+        post_ids_json: &str,
+        last_error: &str,
+    ) -> Result<i64, crate::error::Error> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO delivery_queue
+                (psyop, psyop_commit_sha, target_json, post_ids_json,
+                 attempts, last_error, last_attempt_at)
+             VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)",
+            params![psyop, psyop_commit_sha, target_json, post_ids_json, last_error, now],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Returns all queued (not-yet-redelivered) rows.
+    /// `psyop_filter = Some(name)` narrows to one psyop.
+    pub fn list_pending_deliveries(
+        &self,
+        psyop_filter: Option<&str>,
+    ) -> Result<Vec<QueuedDelivery>, crate::error::Error> {
+        let mut stmt = match psyop_filter {
+            Some(_) => self.conn.prepare(
+                "SELECT id, psyop, psyop_commit_sha, target_json, post_ids_json,
+                        attempts, last_error, last_attempt_at
+                 FROM delivery_queue
+                 WHERE psyop = ?1
+                 ORDER BY id ASC",
+            )?,
+            None => self.conn.prepare(
+                "SELECT id, psyop, psyop_commit_sha, target_json, post_ids_json,
+                        attempts, last_error, last_attempt_at
+                 FROM delivery_queue
+                 ORDER BY id ASC",
+            )?,
+        };
+        let row_to_delivery = |r: &rusqlite::Row| -> rusqlite::Result<QueuedDelivery> {
+            Ok(QueuedDelivery {
+                id:               r.get(0)?,
+                psyop:            r.get(1)?,
+                psyop_commit_sha: r.get(2)?,
+                target_json:      r.get(3)?,
+                post_ids_json:    r.get(4)?,
+                attempts:         r.get(5)?,
+                last_error:       r.get(6)?,
+                last_attempt_at:  r.get(7)?,
+            })
+        };
+        let rows = match psyop_filter {
+            Some(name) => stmt.query_map(params![name], row_to_delivery)?
+                .collect::<Result<Vec<_>, _>>()?,
+            None => stmt.query_map([], row_to_delivery)?
+                .collect::<Result<Vec<_>, _>>()?,
+        };
+        Ok(rows)
+    }
+
+    /// Bump `attempts`, update `last_error` + `last_attempt_at`.
+    /// Use when a retry attempt for a queued row fails again.
+    pub fn bump_delivery_attempt(
+        &self,
+        id: i64,
+        last_error: &str,
+    ) -> Result<(), crate::error::Error> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE delivery_queue
+             SET attempts        = attempts + 1,
+                 last_error      = ?2,
+                 last_attempt_at = ?3
+             WHERE id = ?1",
+            params![id, last_error, now],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a queued delivery row (delivered successfully, or
+    /// operator-pruned).
+    pub fn delete_delivery(&self, id: i64) -> Result<(), crate::error::Error> {
+        self.conn.execute(
+            "DELETE FROM delivery_queue WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+}
+
+/// One row from `delivery_queue` — a delivery that previously failed
+/// and is awaiting retry.
+#[derive(Debug, Clone)]
+pub struct QueuedDelivery {
+    pub id:               i64,
+    pub psyop:            String,
+    pub psyop_commit_sha: String,
+    pub target_json:      String,
+    pub post_ids_json:    String,
+    pub attempts:         i64,
+    pub last_error:       String,
+    pub last_attempt_at:  String,
 }

@@ -23,7 +23,7 @@ Profiles can be improved over time through feedback. When the user indicates whi
 
 The project is split into two packages:
 
-- **`psychological-operations-cli`** — Rust CLI (clap-based). Owns all business logic: config, database, scoring, notifications, psyop loading, git versioning. Invokes the Playwright wrapper for browser operations and the `objectiveai` CLI for API calls.
+- **`psychological-operations-cli`** — Rust CLI (clap-based). Owns all business logic: config, database, scoring, targets, psyop loading, git versioning. Invokes the Playwright wrapper for browser operations and the `objectiveai` CLI for API calls.
 - **`psychological-operations-playwright`** — Thin Node.js/TypeScript process. Exposes Playwright browser automation via a JSON-over-stdio protocol. Never touches the filesystem directly.
 
 ## System requirements

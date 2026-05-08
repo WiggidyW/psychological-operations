@@ -6,15 +6,15 @@ use destinations::Destination;
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Get all global notifications, or one by index
+    /// Get all global targets, or one by index
     Get {
         index: Option<usize>,
     },
-    /// Add a global notification target (JSON string)
+    /// Add a global target (JSON string)
     Add {
         json: String,
     },
-    /// Remove a global notification target by index
+    /// Remove a global target by index
     Del {
         index: usize,
     },
@@ -27,26 +27,26 @@ impl Commands {
                 let cfg = crate::config::load();
                 match index {
                     Some(i) => {
-                        let entry = cfg.notifications.get(i)
-                            .ok_or_else(|| crate::error::Error::Other(format!("no notification at index {i}")))?;
+                        let entry = cfg.targets.get(i)
+                            .ok_or_else(|| crate::error::Error::Other(format!("no target at index {i}")))?;
                         Ok(crate::Output::ConfigGet(serde_json::to_string(entry)?))
                     }
-                    None => Ok(crate::Output::ConfigGet(serde_json::to_string(&cfg.notifications)?)),
+                    None => Ok(crate::Output::ConfigGet(serde_json::to_string(&cfg.targets)?)),
                 }
             }
             Commands::Add { json } => {
                 let parsed: Destination = serde_json::from_str(&json)?;
                 let mut cfg = crate::config::load();
-                cfg.notifications.push(parsed);
+                cfg.targets.push(parsed);
                 crate::config::save(&cfg)?;
                 Ok(crate::Output::ConfigSet)
             }
             Commands::Del { index } => {
                 let mut cfg = crate::config::load();
-                if index >= cfg.notifications.len() {
-                    return Err(crate::error::Error::Other(format!("no notification at index {index}")));
+                if index >= cfg.targets.len() {
+                    return Err(crate::error::Error::Other(format!("no target at index {index}")));
                 }
-                cfg.notifications.remove(index);
+                cfg.targets.remove(index);
                 crate::config::save(&cfg)?;
                 Ok(crate::Output::ConfigSet)
             }

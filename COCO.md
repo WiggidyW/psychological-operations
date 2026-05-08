@@ -354,7 +354,7 @@ Migration plan, smallest-step-first:
    the `scores` table where psyop A wrote them, with the right `min_score`
    predicate.
 
-The Rust scrape side (Playwright harness, agent intervention, notifications)
+The Rust scrape side (Playwright harness, agent intervention, targets)
 stays as-is. Only the score / cascade / persist path moves into CocoIndex.
 
 ### Why bother

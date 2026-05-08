@@ -1,4 +1,4 @@
-pub mod notifications;
+pub mod targets;
 pub mod run;
 
 pub mod psyop;
@@ -64,10 +64,10 @@ pub enum Commands {
         #[arg(long, requires = "name")]
         commit: Option<String>,
     },
-    /// Manage per-psyop notification destinations.
-    Notifications {
+    /// Manage per-psyop target destinations.
+    Targets {
         #[command(subcommand)]
-        command: notifications::Commands,
+        command: targets::Commands,
     },
 }
 
@@ -110,7 +110,7 @@ impl Commands {
             Commands::Disable { name, commit } => set_disabled(&name, commit.as_deref(), true),
             Commands::Publish { args } => publish(args),
             Commands::Run { name, commit } => run::run_all(name.as_deref(), commit.as_deref()).await,
-            Commands::Notifications { command } => command.handle(),
+            Commands::Targets { command } => command.handle(),
         }
     }
 }

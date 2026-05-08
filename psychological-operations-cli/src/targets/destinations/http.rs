@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{json_body, Subject};
 
-/// Configuration for an HTTP notification destination. Sends a tagged JSON
+/// Configuration for an HTTP target destination. Sends a tagged JSON
 /// body describing the subject (psyop or scrape) to an arbitrary endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Http {
@@ -34,7 +34,7 @@ pub async fn send(cfg: &Http, subject: &Subject<'_>) -> Result<(), crate::error:
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
         return Err(crate::error::Error::Other(format!(
-            "http notification failed: {status}: {body}",
+            "http delivery failed: {status}: {body}",
         )));
     }
     Ok(())

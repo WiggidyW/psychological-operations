@@ -4,7 +4,7 @@ use crate::billing;
 use crate::chrome;
 use crate::ingest;
 use crate::invent;
-use crate::notifications;
+use crate::targets;
 use crate::psyops;
 
 #[derive(Parser)]
@@ -17,15 +17,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Manage psyops (list/get/enable/disable/publish/run/notifications)
+    /// Manage psyops (list/get/enable/disable/publish/run/targets)
     Psyops {
         #[command(subcommand)]
         command: psyops::Commands,
     },
-    /// Global notification destinations
-    Notifications {
+    /// Global target destinations
+    Targets {
         #[command(subcommand)]
-        command: notifications::Commands,
+        command: targets::Commands,
     },
     /// Invent a function for scoring posts
     Invent {
@@ -84,7 +84,7 @@ where
     let cli = Cli::try_parse_from(args).map_err(|e| e.to_string())?;
     let output = match cli.command {
         Commands::Psyops { command } => command.handle().await,
-        Commands::Notifications { command } => command.handle(),
+        Commands::Targets { command } => command.handle(),
         Commands::Invent { command } => command.handle(),
         Commands::NativeHost => ingest::run().await,
         Commands::Browse { psyop, commit } => chrome::browse(psyop, commit).await,

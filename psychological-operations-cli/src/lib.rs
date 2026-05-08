@@ -4,7 +4,7 @@ pub mod db;
 pub mod tweet;
 pub mod input;
 pub mod score;
-pub mod notifications;
+pub mod targets;
 pub mod psyops;
 pub mod x;
 pub mod ingest;

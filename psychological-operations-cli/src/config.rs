@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::notifications::destinations::Destination;
+use crate::targets::destinations::Destination;
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -31,13 +31,13 @@ pub fn db_path() -> PathBuf {
 // Per-name overrides
 // ---------------------------------------------------------------------------
 
-/// Notification destinations + flags that apply to one psyop. Used both as
+/// Target destinations + flags that apply to one psyop. Used both as
 /// the `base` of a `PsyopOverrides` and as the value of each commit-specific
 /// entry under `commits`.
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct PsyopConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub notifications: Vec<Destination>,
+    pub targets: Vec<Destination>,
     /// `Some(true)`  → disabled, `Some(false)` → forced enabled,
     /// `None`        → inherit from the next layer (base, then default
     /// behaviour, which is enabled).
@@ -47,14 +47,14 @@ pub struct PsyopConfig {
 
 impl PsyopConfig {
     pub fn is_empty(&self) -> bool {
-        self.notifications.is_empty() && self.disabled.is_none()
+        self.targets.is_empty() && self.disabled.is_none()
     }
 }
 
 /// Two-level overrides for a psyop: a `base` that applies to every commit
 /// of that psyop, plus an optional `commits` map keyed by SHA. When
 /// resolving a value for a specific commit, the commit-level entry shadows
-/// `base`. For `notifications`, the rule is replace-or-fall-back (never
+/// `base`. For `targets`, the rule is replace-or-fall-back (never
 /// merged); for scalar fields the commit-level wins only if it's `Some(_)`.
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct PsyopOverrides {
@@ -69,16 +69,16 @@ impl PsyopOverrides {
         self.base.is_empty() && self.commits.is_empty()
     }
 
-    /// Notifications that apply at `commit_sha`. If a commit-level entry
-    /// exists with non-empty notifications, those are used exclusively;
-    /// otherwise the base notifications are used. Never a concatenation.
-    pub fn notifications_for(&self, commit_sha: &str) -> &[Destination] {
+    /// Targets that apply at `commit_sha`. If a commit-level entry
+    /// exists with non-empty targets, those are used exclusively;
+    /// otherwise the base targets are used. Never a concatenation.
+    pub fn targets_for(&self, commit_sha: &str) -> &[Destination] {
         if let Some(c) = self.commits.get(commit_sha) {
-            if !c.notifications.is_empty() {
-                return &c.notifications;
+            if !c.targets.is_empty() {
+                return &c.targets;
             }
         }
-        &self.base.notifications
+        &self.base.targets
     }
 
     pub fn disabled_for(&self, commit_sha: &str) -> bool {
@@ -95,9 +95,9 @@ impl PsyopOverrides {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Config {
-    /// Global notification destinations — fire on every psyop run.
+    /// Global target destinations — fire on every psyop run.
     #[serde(default)]
-    pub notifications: Vec<Destination>,
+    pub targets: Vec<Destination>,
     /// Per-psyop overrides keyed by psyop name. Each entry has a `base`
     /// applied to every commit, plus an optional `commits` map that can
     /// shadow base values for a specific SHA.

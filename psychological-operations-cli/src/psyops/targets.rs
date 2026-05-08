@@ -1,10 +1,10 @@
 use clap::Subcommand;
 
-use crate::notifications::destinations::Destination;
+use crate::targets::destinations::Destination;
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Get this psyop's per-name notifications. With `--commit <sha>` reads
+    /// Get this psyop's per-name targets. With `--commit <sha>` reads
     /// the commit-specific list; otherwise reads the base list.
     Get {
         name: String,
@@ -12,7 +12,7 @@ pub enum Commands {
         #[arg(long)]
         commit: Option<String>,
     },
-    /// Add a notification target to this psyop. With `--commit <sha>` adds
+    /// Add a target to this psyop. With `--commit <sha>` adds
     /// to the commit-specific list; otherwise adds to base.
     Add {
         name: String,
@@ -20,7 +20,7 @@ pub enum Commands {
         #[arg(long)]
         commit: Option<String>,
     },
-    /// Remove a notification target by index. `--commit` selects the layer.
+    /// Remove a target by index. `--commit` selects the layer.
     Del {
         name: String,
         index: usize,
@@ -35,13 +35,13 @@ impl Commands {
             Commands::Get { name, index, commit } => {
                 let cfg = crate::config::load();
                 let list: Vec<Destination> = cfg.psyops.get(&name).map(|o| match commit.as_deref() {
-                    Some(sha) => o.commits.get(sha).map(|c| c.notifications.clone()).unwrap_or_default(),
-                    None => o.base.notifications.clone(),
+                    Some(sha) => o.commits.get(sha).map(|c| c.targets.clone()).unwrap_or_default(),
+                    None => o.base.targets.clone(),
                 }).unwrap_or_default();
                 match index {
                     Some(i) => {
                         let entry = list.get(i)
-                            .ok_or_else(|| crate::error::Error::Other(format!("no notification at index {i}")))?;
+                            .ok_or_else(|| crate::error::Error::Other(format!("no target at index {i}")))?;
                         Ok(crate::Output::ConfigGet(serde_json::to_string(entry)?))
                     }
                     None => Ok(crate::Output::ConfigGet(serde_json::to_string(&list)?)),
@@ -52,8 +52,8 @@ impl Commands {
                 let mut cfg = crate::config::load();
                 let overrides = cfg.psyops.entry(name).or_default();
                 match commit.as_deref() {
-                    Some(sha) => overrides.commits.entry(sha.to_string()).or_default().notifications.push(parsed),
-                    None => overrides.base.notifications.push(parsed),
+                    Some(sha) => overrides.commits.entry(sha.to_string()).or_default().targets.push(parsed),
+                    None => overrides.base.targets.push(parsed),
                 }
                 crate::config::save(&cfg)?;
                 Ok(crate::Output::ConfigSet)
@@ -66,11 +66,11 @@ impl Commands {
                     let target = match commit.as_deref() {
                         Some(sha) => &mut overrides.commits.get_mut(sha)
                             .ok_or_else(|| crate::error::Error::Other(format!("no commit override \"{sha}\" for psyop \"{name}\"")))?
-                            .notifications,
-                        None => &mut overrides.base.notifications,
+                            .targets,
+                        None => &mut overrides.base.targets,
                     };
                     if index >= target.len() {
-                        return Err(crate::error::Error::Other(format!("no notification at index {index}")));
+                        return Err(crate::error::Error::Other(format!("no target at index {index}")));
                     }
                     target.remove(index);
                     if let Some(sha) = commit.as_deref() {

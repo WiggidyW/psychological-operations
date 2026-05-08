@@ -7,6 +7,7 @@ pub mod stderr;
 pub mod stdout;
 pub mod telegram;
 pub mod websocket;
+pub mod x;
 
 use serde::{Deserialize, Serialize};
 
@@ -32,11 +33,14 @@ pub enum Destination {
     Exec(exec::Exec),
     #[serde(rename = "websocket")]
     WebSocket(websocket::WebSocket),
+    #[serde(rename = "x")]
+    X(x::X),
 }
 
-/// What's being notified about. Text-mode renderers print a per-tweet
+/// What's being delivered. Text-mode renderers print a per-tweet
 /// line list; JSON-mode renderers emit a tagged Body via
-/// `json_body::build`.
+/// `json_body::build`. The X destination consumes the post IDs to
+/// like / retweet on the platform.
 pub enum Subject<'a> {
     Psyop {
         name: &'a str,
@@ -45,7 +49,7 @@ pub enum Subject<'a> {
     },
 }
 
-pub async fn notify(destinations: &[Destination], subject: Subject<'_>) {
+pub async fn dispatch(destinations: &[Destination], subject: Subject<'_>) {
     let subject_ref = &subject;
     let futs = destinations.iter().map(|dest| async move {
         match dest {
@@ -57,11 +61,12 @@ pub async fn notify(destinations: &[Destination], subject: Subject<'_>) {
             Destination::File(cfg) => file::send(cfg, subject_ref).await,
             Destination::Exec(cfg) => exec::send(cfg, subject_ref).await,
             Destination::WebSocket(cfg) => websocket::send(cfg, subject_ref).await,
+            Destination::X(cfg) => x::send(cfg, subject_ref).await,
         }
     });
     for result in futures::future::join_all(futs).await {
         if let Err(e) = result {
-            eprintln!("notification failed: {e}");
+            eprintln!("delivery failed: {e}");
         }
     }
 }
