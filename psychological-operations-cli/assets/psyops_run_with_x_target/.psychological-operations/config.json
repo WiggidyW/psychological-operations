@@ -1,0 +1,5 @@
+{
+  "targets": [
+    { "type": "x", "action": "like" }
+  ]
+}
