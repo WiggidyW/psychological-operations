@@ -1,0 +1,4 @@
+Logs ID: <id>
+{"output":[0.5,0.5,0.5]}
+Logs ID: <id>
+{"output":[0.5,0.5,0.5]}
