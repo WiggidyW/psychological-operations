@@ -1,6 +1,6 @@
 //! `psyops run` — execute a single psyop end-to-end.
 //!
-//! Per-psyop flow (see `look-at-how-claude-agent-sdk-runner-…` plan):
+//! Per-psyop flow:
 //! 1. Drain the for_you_queue, hydrating each id via X v2 `/2/tweets/{id}`
 //!    and persisting via `Db::insert_post(_, _, _, Origin::ForYou)`.
 //! 2. Read every unscored tweet for `(psyop, commit)` with its origins.
@@ -15,7 +15,15 @@
 //!    first; `None` last); each bucket is sorted via `SortBy::evaluate`;
 //!    buckets concatenate in priority order.
 //! 6. Trim to `max_posts`.
-//! 7. **TODO**: scoring + `Db::set_scores`. Currently `todo!()`.
+//! 7. Run multi-stage scoring (objectiveai), capturing every scored
+//!    post + the final survivors.
+//! 8. Persist scores via `Db::set_scores`.
+//! 9. Reap `contents` for every post under (psyop, commit) so storage
+//!    doesn't accumulate (`Db::drop_psyop_contents`).
+//! 10. Enqueue one `delivery_queue` row per (applicable target,
+//!     final-survivors) tuple — global + per-psyop targets.
+//! 11. Drain the delivery queue via `targets::drain_queue` (filtered
+//!     to this psyop).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -116,9 +124,60 @@ pub async fn run_psyop(
 
         // 7. Hydrate Tweet -> Post by joining with the `contents`
         //    table, then run the multi-stage scoring pipeline.
-        score_pipeline(&db, &psyop, name, trimmed)?;
+        let result = score_pipeline(&db, &psyop, name, trimmed)?;
+
+        // 8. Persist scores for every scored post.
+        if !result.last_scores.is_empty() {
+            let ids: Vec<String> = result.last_scores.keys().cloned().collect();
+            let scores: Vec<f64> = ids.iter().map(|id| result.last_scores[id]).collect();
+            db.set_scores(&ids, &scores)?;
+        }
+
+        // 9. Reap content for every post under (name, commit), scored
+        //    or not.
+        let dropped = db.drop_psyop_contents(name, &commit)?;
+        eprintln!(
+            "psyop \"{name}\": dropped {dropped} contents row(s) post-scoring",
+        );
+
+        // 10. Enqueue a delivery_queue row per (target, survivors).
+        if !result.survivors.is_empty() {
+            let cfg = crate::config::load();
+            let post_ids: Vec<String> = result.survivors.iter()
+                .map(|s| s.post.id.clone())
+                .collect();
+            let post_ids_json = serde_json::to_string(&post_ids)?;
+
+            for dest in &cfg.targets {
+                let target_json = serde_json::to_string(dest)?;
+                db.enqueue_delivery(name, &commit, &target_json, &post_ids_json)?;
+            }
+            let per_psyop: Vec<crate::targets::destinations::Destination> =
+                cfg.psyops.get(name)
+                    .map(|o| o.targets_for(&commit).to_vec())
+                    .unwrap_or_default();
+            for dest in &per_psyop {
+                let target_json = serde_json::to_string(dest)?;
+                db.enqueue_delivery(name, &commit, &target_json, &post_ids_json)?;
+            }
+        }
+
+        // 11. Drain the queue (filtered to this psyop).
+        let summary = crate::targets::drain_queue(&db, Some(name)).await?;
+        eprintln!(
+            "psyop \"{name}\": delivered {} of {} pending ({} failed)",
+            summary.delivered, summary.pending, summary.failed,
+        );
+
         return Ok(crate::Output::Empty);
     }
+}
+
+/// Output of `score_pipeline` — every post that got a score, plus the
+/// final survivors of all stages (which are what targets fire against).
+struct ScoreResult {
+    last_scores: HashMap<String, f64>,
+    survivors:   Vec<ScoredPost>,
 }
 
 // -- step 7: score pipeline -----------------------------------------------
@@ -128,11 +187,10 @@ fn score_pipeline(
     psyop: &PsyOp,
     name: &str,
     trimmed: Vec<Tweet>,
-) -> Result<(), Error> {
+) -> Result<ScoreResult, Error> {
     // Hydrate Tweet -> Post via contents lookup. Tweets whose
     // contents row is absent are filtered out — by contract those
-    // posts don't exist for our purposes (set_scores reaped them
-    // already, or some other invariant violation).
+    // posts don't exist for our purposes.
     let ids: Vec<String> = trimmed.iter().map(|t| t.id.clone()).collect();
     let contents = db.fetch_contents(&ids)?;
     let mut current: Vec<Post> = trimmed
@@ -163,6 +221,7 @@ fn score_pipeline(
     // of every stage end up with the final stage's score; posts
     // dropped at stage K end up with stage K's score.
     let mut last_scores: HashMap<String, f64> = HashMap::new();
+    let mut survivors: Vec<ScoredPost> = Vec::new();
 
     for (i, stage) in psyop.stages.iter().enumerate() {
         if current.is_empty() {
@@ -193,25 +252,17 @@ fn score_pipeline(
             _ => after_threshold,
         };
 
+        survivors = after_top.clone();
         current = after_top.into_iter().map(|s| s.post).collect();
     }
-
-    if last_scores.is_empty() {
-        eprintln!("psyop \"{name}\": nothing was scored; no scores persisted");
-        return Ok(());
-    }
-
-    let ids: Vec<String> = last_scores.keys().cloned().collect();
-    let scores: Vec<f64> = ids.iter().map(|id| last_scores[id]).collect();
-    db.set_scores(&ids, &scores)?;
 
     eprintln!(
         "psyop \"{name}\": scored {} posts ({} survived all {} stages)",
         last_scores.len(),
-        current.len(),
+        survivors.len(),
         psyop.stages.len(),
     );
-    Ok(())
+    Ok(ScoreResult { last_scores, survivors })
 }
 
 // -- step 1: hydrate -------------------------------------------------------

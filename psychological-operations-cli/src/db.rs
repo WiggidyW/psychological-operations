@@ -63,9 +63,9 @@ const SCHEMA: &str = "
         psyop_commit_sha  TEXT    NOT NULL,
         target_json       TEXT    NOT NULL,
         post_ids_json     TEXT    NOT NULL,
-        attempts          INTEGER NOT NULL DEFAULT 1,
-        last_error        TEXT    NOT NULL,
-        last_attempt_at   TEXT    NOT NULL,
+        attempts          INTEGER NOT NULL DEFAULT 0,
+        last_error        TEXT,
+        last_attempt_at   TEXT,
         created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS delivery_queue_by_psyop
@@ -472,6 +472,26 @@ impl Db {
         Ok(())
     }
 
+    /// Enqueue a delivery up front (attempts=0, no error yet). The
+    /// runtime uses this after scoring so every applicable target
+    /// gets a queued row, and `targets deliver` (a.k.a.
+    /// `drain_queue`) sweeps them uniformly.
+    pub fn enqueue_delivery(
+        &self,
+        psyop: &str,
+        psyop_commit_sha: &str,
+        target_json: &str,
+        post_ids_json: &str,
+    ) -> Result<i64, crate::error::Error> {
+        self.conn.execute(
+            "INSERT INTO delivery_queue
+                (psyop, psyop_commit_sha, target_json, post_ids_json)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![psyop, psyop_commit_sha, target_json, post_ids_json],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
     /// Persist a single failed delivery so it can be retried later.
     /// Caller serializes the destination + the post IDs the delivery
     /// was acting on. `last_attempt_at` is stamped to now. Returns
@@ -493,6 +513,26 @@ impl Db {
             params![psyop, psyop_commit_sha, target_json, post_ids_json, last_error, now],
         )?;
         Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Reap `contents` for every post under (psyop, commit). Idempotent;
+    /// safe after `set_scores` (which already drops content for the
+    /// scored ids — this catches unscored posts whose content would
+    /// otherwise leak forever). Returns the number of rows deleted.
+    pub fn drop_psyop_contents(
+        &self,
+        psyop: &str,
+        psyop_commit_sha: &str,
+    ) -> Result<usize, crate::error::Error> {
+        let n = self.conn.execute(
+            "DELETE FROM contents
+             WHERE post_id IN (
+                 SELECT id FROM posts
+                 WHERE psyop = ?1 AND psyop_commit_sha = ?2
+             )",
+            params![psyop, psyop_commit_sha],
+        )?;
+        Ok(n)
     }
 
     /// Returns all queued (not-yet-redelivered) rows.
@@ -567,8 +607,10 @@ impl Db {
     }
 }
 
-/// One row from `delivery_queue` — a delivery that previously failed
-/// and is awaiting retry.
+/// One row from `delivery_queue` — a delivery awaiting (re)delivery.
+/// `last_error` / `last_attempt_at` are `None` for freshly enqueued
+/// rows that haven't been attempted yet; `Some(...)` after at least
+/// one failed attempt.
 #[derive(Debug, Clone)]
 pub struct QueuedDelivery {
     pub id:               i64,
@@ -577,6 +619,6 @@ pub struct QueuedDelivery {
     pub target_json:      String,
     pub post_ids_json:    String,
     pub attempts:         i64,
-    pub last_error:       String,
-    pub last_attempt_at:  String,
+    pub last_error:       Option<String>,
+    pub last_attempt_at:  Option<String>,
 }

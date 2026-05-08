@@ -57,25 +57,33 @@ impl Commands {
                 crate::config::save(&cfg)?;
                 Ok(crate::Output::ConfigSet)
             }
-            Commands::Deliver { psyop } => deliver(psyop.as_deref()).await,
+            Commands::Deliver { psyop } => {
+                let db = crate::db::Db::open()?;
+                let summary = drain_queue(&db, psyop.as_deref()).await?;
+                Ok(crate::Output::Api(serde_json::to_string(&summary)?))
+            }
         }
     }
 }
 
 #[derive(serde::Serialize)]
-struct DeliverySummary {
-    pending:   usize,
-    delivered: usize,
-    failed:    usize,
+pub struct DeliverySummary {
+    pub pending:   usize,
+    pub delivered: usize,
+    pub failed:    usize,
 }
 
-async fn deliver(psyop_filter: Option<&str>) -> Result<crate::Output, crate::error::Error> {
-    use crate::db::{Db, MediaUrl, Post};
+/// Drain the delivery queue. The CLI handler wraps this; the runtime
+/// calls it directly after a successful score+enqueue cycle.
+pub async fn drain_queue(
+    db: &crate::db::Db,
+    psyop_filter: Option<&str>,
+) -> Result<DeliverySummary, crate::error::Error> {
+    use crate::db::{MediaUrl, Post};
     use crate::psyops::psyop;
     use crate::score::ScoredPost;
     use destinations::{send_one, Subject};
 
-    let db = Db::open()?;
     let rows = db.list_pending_deliveries(psyop_filter)?;
     let pending = rows.len();
     let mut delivered = 0usize;
@@ -154,6 +162,5 @@ async fn deliver(psyop_filter: Option<&str>) -> Result<crate::Output, crate::err
         }
     }
 
-    let summary = DeliverySummary { pending, delivered, failed };
-    Ok(crate::Output::Api(serde_json::to_string(&summary)?))
+    Ok(DeliverySummary { pending, delivered, failed })
 }
