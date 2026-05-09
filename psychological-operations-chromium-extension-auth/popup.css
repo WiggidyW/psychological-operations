@@ -4,20 +4,16 @@ body {
   padding: 12px;
   font: 12px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif;
 }
-#identity {
-  font-family: ui-monospace, "Cascadia Mono", "Menlo", monospace;
-  font-size: 11px;
-  color: #444;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+#title {
+  font-weight: 600;
+  font-size: 12px;
+  color: #333;
 }
 hr {
   border: none;
   border-top: 1px solid #e0e0e0;
   margin: 8px 0;
 }
-button#capture,
 button#bf_save {
   width: 100%;
   padding: 8px 12px;
@@ -29,12 +25,10 @@ button#bf_save {
   border-radius: 6px;
   cursor: pointer;
 }
-button#capture:disabled,
 button#bf_save:disabled {
   background: #aaa;
   cursor: not-allowed;
 }
-button#capture:not(:disabled):hover,
 button#bf_save:not(:disabled):hover {
   background: #1a8cd8;
 }

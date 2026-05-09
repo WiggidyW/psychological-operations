@@ -80,7 +80,7 @@ pub async fn run(psyop_name: &str, cfg: &crate::run::Config) -> Result<crate::Ou
     // closes it; we don't block on that.
     let _child = crate::chromium::launch::spawn(
         &materialized.chromium_binary,
-        &materialized.extension_dir,
+        &materialized.scrape_extension_dir,
         &profile,
         psyop_name,
         // commit isn't load-bearing for the OAuth flow (no native

@@ -1,7 +1,7 @@
 //! Content-hash-keyed cached extraction of the embedded Chromium zip
-//! and extension tar. First call materializes both into
-//! `~/.psychological-operations/chromium/<hash>/`; subsequent calls
-//! short-circuit when the hash dir already exists.
+//! and both extension tars (scrape + auth). First call materializes
+//! all three into `~/.psychological-operations/chromium/<hash>/`;
+//! subsequent calls short-circuit when the hash dir already exists.
 
 use std::fs;
 use std::io::Cursor;
@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use super::bundles::{CHROMIUM_BUNDLE, EXTENSION_TAR, launch_entry};
+use super::bundles::{
+    AUTH_EXTENSION_TAR, CHROMIUM_BUNDLE, SCRAPE_EXTENSION_TAR, launch_entry,
+};
 use super::paths::chromium_cache_root;
 use crate::error::Error;
 
@@ -17,7 +19,8 @@ use crate::error::Error;
 pub struct Extracted {
     pub root: PathBuf,
     pub chromium_binary: PathBuf,
-    pub extension_dir: PathBuf,
+    pub scrape_extension_dir: PathBuf,
+    pub auth_extension_dir: PathBuf,
 }
 
 /// Extract (or hit cache) and return the relevant paths.
@@ -25,7 +28,8 @@ pub fn ensure_extracted(cfg: &crate::run::Config) -> Result<Extracted, Error> {
     let hash = content_hash();
     let root = chromium_cache_root(cfg).join(format!("{hash:016x}"));
     let chromium_binary = root.join("chromium").join(launch_entry());
-    let extension_dir = root.join("extension");
+    let scrape_extension_dir = root.join("scrape-extension");
+    let auth_extension_dir = root.join("auth-extension");
     let sentinel = root.join(".ready");
 
     if !sentinel.exists() {
@@ -39,11 +43,16 @@ pub fn ensure_extracted(cfg: &crate::run::Config) -> Result<Extracted, Error> {
         fs::create_dir_all(&chromium_root)?;
         extract_zip(CHROMIUM_BUNDLE, &chromium_root)?;
 
-        if extension_dir.exists() {
-            let _ = fs::remove_dir_all(&extension_dir);
+        for (tar_bytes, dest) in [
+            (SCRAPE_EXTENSION_TAR, &scrape_extension_dir),
+            (AUTH_EXTENSION_TAR,   &auth_extension_dir),
+        ] {
+            if dest.exists() {
+                let _ = fs::remove_dir_all(dest);
+            }
+            fs::create_dir_all(dest)?;
+            extract_tar(tar_bytes, dest)?;
         }
-        fs::create_dir_all(&extension_dir)?;
-        extract_tar(EXTENSION_TAR, &extension_dir)?;
 
         // Cross-platform Unix executable bit — necessary on Linux/Mac
         // because zip extraction on those platforms doesn't preserve
@@ -59,7 +68,12 @@ pub fn ensure_extracted(cfg: &crate::run::Config) -> Result<Extracted, Error> {
         fs::write(&sentinel, "ok")?;
     }
 
-    Ok(Extracted { root, chromium_binary, extension_dir })
+    Ok(Extracted {
+        root,
+        chromium_binary,
+        scrape_extension_dir,
+        auth_extension_dir,
+    })
 }
 
 fn content_hash() -> u64 {
@@ -68,8 +82,10 @@ fn content_hash() -> u64 {
     let mut hasher = Sha256::new();
     hasher.update(&(CHROMIUM_BUNDLE.len() as u64).to_le_bytes());
     hasher.update(CHROMIUM_BUNDLE);
-    hasher.update(&(EXTENSION_TAR.len() as u64).to_le_bytes());
-    hasher.update(EXTENSION_TAR);
+    hasher.update(&(SCRAPE_EXTENSION_TAR.len() as u64).to_le_bytes());
+    hasher.update(SCRAPE_EXTENSION_TAR);
+    hasher.update(&(AUTH_EXTENSION_TAR.len() as u64).to_le_bytes());
+    hasher.update(AUTH_EXTENSION_TAR);
     let digest = hasher.finalize();
     let mut buf = [0u8; 8];
     buf.copy_from_slice(&digest[..8]);

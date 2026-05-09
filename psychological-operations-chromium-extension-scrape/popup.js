@@ -1,20 +1,9 @@
 const identityEl = document.getElementById("identity");
 const captureBtn = document.getElementById("capture");
-const xAppForm = document.getElementById("x_app_form");
-const xAppSaveBtn = document.getElementById("bf_save");
-const statusEl = document.getElementById("status");
-
-const X_APP_FIELDS = [
-  ["client_id",      "bf_client_id"],
-  ["client_secret",  "bf_client_secret"],
-  ["api_key",        "bf_api_key"],
-  ["api_key_secret", "bf_api_key_secret"],
-  ["bearer_token",   "bf_bearer_token"],
-];
+const statusEl   = document.getElementById("status");
 
 let activeTabId = null;
 let countTimer  = null;
-let mode        = null; // "psyop" | "x_app"
 
 function setStatus(text, cls) {
   statusEl.textContent = text;
@@ -29,7 +18,6 @@ async function activeTab() {
 }
 
 async function refreshCount() {
-  if (mode !== "psyop") return;
   const id = await activeTab();
   if (id == null) return;
   try {
@@ -56,16 +44,14 @@ async function loadIdentity() {
     const id = reply.identity;
     identityEl.textContent = `psyop: ${id.psyop} @ ${id.commit.slice(0, 8)}`;
     identityEl.classList.remove("error");
-    mode = "psyop";
-    captureBtn.hidden = false;
-    xAppForm.hidden = true;
   } else {
-    // Identity unresolvable → x_app profile (PSYOP_NAME unset).
-    identityEl.textContent = "x_app setup";
-    identityEl.classList.remove("error");
-    mode = "x_app";
-    captureBtn.hidden = true;
-    xAppForm.hidden = false;
+    // The scrape extension only makes sense in psyop context. If
+    // PSYOP_NAME isn't set the launcher pointed us at the wrong
+    // session — surface the error rather than silently disabling.
+    identityEl.textContent = `no psyop identity: ${(reply && reply.error) || "unknown"}`;
+    identityEl.classList.add("error");
+    captureBtn.disabled = true;
+    captureBtn.textContent = "Capture (no psyop identity)";
   }
 }
 
@@ -96,55 +82,12 @@ captureBtn.addEventListener("click", async () => {
   }
 });
 
-xAppForm.addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  xAppSaveBtn.disabled = true;
-
-  const credentials = {};
-  let nonEmpty = 0;
-  for (const [key, inputId] of X_APP_FIELDS) {
-    const v = document.getElementById(inputId).value.trim();
-    if (v.length > 0) {
-      credentials[key] = v;
-      nonEmpty++;
-    } else {
-      credentials[key] = null;
-    }
-  }
-  if (nonEmpty === 0) {
-    setStatus("enter at least one field", "error");
-    xAppSaveBtn.disabled = false;
-    return;
-  }
-
-  setStatus(`saving ${nonEmpty} field${nonEmpty === 1 ? "" : "s"}…`);
-  try {
-    const reply = await chrome.runtime.sendMessage({ kind: "popup_x_app_save", credentials });
-    if (reply && reply.kind === "x_app_save_ok") {
-      setStatus(`saved ${nonEmpty} field${nonEmpty === 1 ? "" : "s"} to x_app.json`, "ok");
-      // Clear inputs after a successful save so secrets don't linger
-      // visible in the popup if the operator re-opens it.
-      for (const [_key, inputId] of X_APP_FIELDS) {
-        document.getElementById(inputId).value = "";
-      }
-    } else {
-      setStatus(`error: ${(reply && reply.error) || "?"}`, "error");
-    }
-  } catch (e) {
-    setStatus(`error: ${e.message || e}`, "error");
-  } finally {
-    xAppSaveBtn.disabled = false;
-  }
-});
-
 window.addEventListener("unload", () => {
   if (countTimer) clearInterval(countTimer);
 });
 
 (async () => {
   await loadIdentity();
-  if (mode === "psyop") {
-    refreshCount();
-    countTimer = setInterval(refreshCount, 500);
-  }
+  refreshCount();
+  countTimer = setInterval(refreshCount, 500);
 })();

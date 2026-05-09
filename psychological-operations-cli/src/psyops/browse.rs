@@ -57,7 +57,7 @@ pub async fn run(
 
         let mut child = launch::spawn(
             &materialized.chromium_binary,
-            &materialized.extension_dir,
+            &materialized.scrape_extension_dir,
             &profile,
             name,
             &commit,

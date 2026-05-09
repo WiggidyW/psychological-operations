@@ -14,7 +14,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-EXT_DIR="$REPO_ROOT/psychological-operations-chromium-extension"
+SCRAPE_EXT_DIR="$REPO_ROOT/psychological-operations-chromium-extension-scrape"
+AUTH_EXT_DIR="$REPO_ROOT/psychological-operations-chromium-extension-auth"
 
 # Parse --target and --release from args
 TARGET=""
@@ -95,13 +96,15 @@ compute_fingerprint() {
     echo "SNAPSHOT_PLATFORM=$SNAPSHOT_PLATFORM"
     echo "FILE=$SCRIPT_DIR/VERSION"
     echo "FILE=$SCRIPT_DIR/build.sh"
-    # Hash every file inside the extension dir so a change to any
+    # Hash every file inside both extension dirs so a change to any
     # popup/content/background script triggers a rebuild.
-    if [ -d "$EXT_DIR" ]; then
-      while IFS= read -r f; do
-        echo "FILE=$f"
-      done < <(find "$EXT_DIR" -type f -not -name '.DS_Store' | sort)
-    fi
+    for ext_dir in "$SCRAPE_EXT_DIR" "$AUTH_EXT_DIR"; do
+      if [ -d "$ext_dir" ]; then
+        while IFS= read -r f; do
+          echo "FILE=$f"
+        done < <(find "$ext_dir" -type f -not -name '.DS_Store' | sort)
+      fi
+    done
   } | while IFS= read -r line; do
     case "$line" in
       FILE=*)

@@ -15,7 +15,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_DIR="$REPO_ROOT/.logs/build"
 LOG_FILE="$LOG_DIR/$MODULE.txt"
-EXT_DIR="$REPO_ROOT/psychological-operations-chromium-extension"
+SCRAPE_EXT_DIR="$REPO_ROOT/psychological-operations-chromium-extension-scrape"
+AUTH_EXT_DIR="$REPO_ROOT/psychological-operations-chromium-extension-auth"
 
 mkdir -p "$LOG_DIR"
 
@@ -36,28 +37,32 @@ run() {
   CHROMIUM_BYTES=$(wc -c < "$CHROMIUM_BUNDLE_ZIP" | tr -d ' ')
   echo "  -> $CHROMIUM_BYTES bytes"
 
-  # ── pack extension into a signed CRX3 ──────────────────────────────────
-  # crx-pack generates extension-key.pem on first run if it's missing
-  # (commit the result so every build derives the same extension ID).
-  echo "Packing extension into signed CRX3 ..."
+  # ── pack BOTH extensions into signed CRX3s ─────────────────────────────
+  # crx-pack generates the .pem on first run if it's missing (commit
+  # the result so every build derives the same extension ID).
+  echo "Packing extensions into signed CRX3s ..."
   if [ ! -x "$REPO_ROOT/target/release/crx-pack" ] && [ ! -x "$REPO_ROOT/target/release/crx-pack.exe" ]; then
     (cd "$REPO_ROOT" && cargo build -p crx-pack --release --quiet)
   fi
   CRX_PACK="$REPO_ROOT/target/release/crx-pack"
   [ -x "$CRX_PACK.exe" ] && CRX_PACK="$CRX_PACK.exe"
-  "$CRX_PACK" \
-    --extension-dir "$EXT_DIR" \
-    --key "$SCRIPT_DIR/extension-key.pem" \
-    --out "$EMBED_DIR/extension.crx" \
-    --id-out "$EMBED_DIR/extension-id.txt"
 
-  # ── also stage the unpacked extension as a tar ─────────────────────────
-  # `--load-extension` (v1) requires an unpacked dir at runtime; the
+  # `--load-extension` (v1) requires an unpacked dir at runtime; each
   # tar gets include_bytes!'d into the Rust binary and extracted on
   # first launch alongside the chromium zip.
-  EXT_TAR="$EMBED_DIR/extension.tar"
-  rm -f "$EXT_TAR"
-  (cd "$EXT_DIR" && tar -cf "$EXT_TAR" .)
+  for variant in scrape auth; do
+    case "$variant" in
+      scrape) EXT_DIR="$SCRAPE_EXT_DIR" ;;
+      auth)   EXT_DIR="$AUTH_EXT_DIR"   ;;
+    esac
+    "$CRX_PACK" \
+      --extension-dir "$EXT_DIR" \
+      --key "$SCRIPT_DIR/extension-key-${variant}.pem" \
+      --out "$EMBED_DIR/${variant}.crx" \
+      --id-out "$EMBED_DIR/${variant}-id.txt"
+    rm -f "$EMBED_DIR/${variant}.tar"
+    (cd "$EXT_DIR" && tar -cf "$EMBED_DIR/${variant}.tar" .)
+  done
 
   # ── write the launch entry path so the Rust side knows what to exec ────
   printf '%s\n' "$CHROMIUM_LAUNCH_REL" > "$EMBED_DIR/launch-entry.txt"

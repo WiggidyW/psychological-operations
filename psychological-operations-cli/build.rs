@@ -55,12 +55,20 @@ fn main() {
         embed_dir.join("chromium-bundle.zip").display(),
     );
     println!(
-        "cargo:rustc-env=PSYOPS_EXTENSION_TAR_PATH={}",
-        embed_dir.join("extension.tar").display(),
+        "cargo:rustc-env=PSYOPS_SCRAPE_EXTENSION_TAR_PATH={}",
+        embed_dir.join("scrape.tar").display(),
     );
     println!(
-        "cargo:rustc-env=PSYOPS_EXTENSION_ID_PATH={}",
-        embed_dir.join("extension-id.txt").display(),
+        "cargo:rustc-env=PSYOPS_SCRAPE_EXTENSION_ID_PATH={}",
+        embed_dir.join("scrape-id.txt").display(),
+    );
+    println!(
+        "cargo:rustc-env=PSYOPS_AUTH_EXTENSION_TAR_PATH={}",
+        embed_dir.join("auth.tar").display(),
+    );
+    println!(
+        "cargo:rustc-env=PSYOPS_AUTH_EXTENSION_ID_PATH={}",
+        embed_dir.join("auth-id.txt").display(),
     );
     println!(
         "cargo:rustc-env=PSYOPS_CHROMIUM_LAUNCH_ENTRY_PATH={}",

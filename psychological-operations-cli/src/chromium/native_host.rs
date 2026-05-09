@@ -26,7 +26,10 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
-use super::bundles::{EXTENSION_ID, NATIVE_HOST_NAME, extension_id};
+use super::bundles::{
+    AUTH_EXTENSION_ID, NATIVE_HOST_NAME, SCRAPE_EXTENSION_ID,
+    auth_extension_id, scrape_extension_id,
+};
 use super::paths::{native_host_manifest_for_profile, native_host_wrapper};
 use crate::error::Error;
 
@@ -48,7 +51,10 @@ pub fn install(profile: &Path, cfg: &crate::run::Config) -> Result<(), Error> {
             "description": "Psychological Operations native host",
             "path": wrapper,
             "type": "stdio",
-            "allowed_origins": [format!("chrome-extension://{}/", extension_id())],
+            "allowed_origins": [
+                format!("chrome-extension://{}/", scrape_extension_id()),
+                format!("chrome-extension://{}/", auth_extension_id()),
+            ],
         });
         fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;
         manifest_path_for_registry = manifest_path;
@@ -68,7 +74,10 @@ pub fn install(profile: &Path, cfg: &crate::run::Config) -> Result<(), Error> {
             "description": "Psychological Operations native host",
             "path": wrapper.to_string_lossy().replace('\\', "\\\\"),
             "type": "stdio",
-            "allowed_origins": [format!("chrome-extension://{}/", extension_id())],
+            "allowed_origins": [
+                format!("chrome-extension://{}/", scrape_extension_id()),
+                format!("chrome-extension://{}/", auth_extension_id()),
+            ],
         });
         fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;
         register_windows_native_host(&manifest_path)?;
@@ -76,7 +85,8 @@ pub fn install(profile: &Path, cfg: &crate::run::Config) -> Result<(), Error> {
     }
 
     let _ = manifest_path_for_registry;
-    let _ = EXTENSION_ID;
+    let _ = SCRAPE_EXTENSION_ID;
+    let _ = AUTH_EXTENSION_ID;
     Ok(())
 }
 

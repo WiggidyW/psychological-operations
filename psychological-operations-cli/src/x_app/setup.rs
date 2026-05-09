@@ -20,11 +20,11 @@ pub async fn run(cfg: &crate::run::Config) -> Result<crate::Output, Error> {
     // its "Save credentials" button can ship to x_app.json.
     native_host::install(&profile, cfg)?;
 
-    let extension_id = crate::chromium::bundles::extension_id();
+    let extension_id = crate::chromium::bundles::auth_extension_id();
 
     let mut cmd = Command::new(&materialized.chromium_binary);
     cmd.arg(format!("--user-data-dir={}", profile.display()));
-    cmd.arg(format!("--load-extension={}", materialized.extension_dir.display()));
+    cmd.arg(format!("--load-extension={}", materialized.auth_extension_dir.display()));
     cmd.arg(format!("--allowlisted-extension-id={extension_id}"));
     cmd.arg("--no-first-run");
     cmd.arg("--no-default-browser-check");
@@ -37,9 +37,7 @@ pub async fn run(cfg: &crate::run::Config) -> Result<crate::Output, Error> {
     cmd.arg("https://developer.x.com/en/portal/projects-and-apps");
 
     // No PSYOP_NAME / PSYOP_COMMIT_SHA — the X-App profile isn't a
-    // psyop. The popup detects this profile by virtue of identity
-    // resolution failing (PSYOP_NAME unset) and shows the credentials
-    // form instead of the tweet-capture button.
+    // psyop. The auth extension never asks for them.
 
     let child = cmd.spawn().map_err(|e| {
         Error::Other(format!("failed to spawn chromium for x_app setup: {e}"))
