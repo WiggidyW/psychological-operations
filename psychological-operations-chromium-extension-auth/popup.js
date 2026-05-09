@@ -3,11 +3,9 @@ const xAppSaveBtn = document.getElementById("bf_save");
 const statusEl   = document.getElementById("status");
 
 const X_APP_FIELDS = [
-  ["client_id",      "bf_client_id"],
-  ["client_secret",  "bf_client_secret"],
-  ["api_key",        "bf_api_key"],
-  ["api_key_secret", "bf_api_key_secret"],
-  ["bearer_token",   "bf_bearer_token"],
+  ["client_id",     "bf_client_id"],
+  ["client_secret", "bf_client_secret"],
+  ["bearer_token",  "bf_bearer_token"],
 ];
 
 function setStatus(text, cls) {

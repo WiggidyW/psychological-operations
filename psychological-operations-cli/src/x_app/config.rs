@@ -28,16 +28,9 @@ pub struct XAppConfig {
     /// client token exchange.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_secret: Option<String>,
-    /// OAuth 1.0a Consumer Key. Captured opportunistically; not used
-    /// by the runtime today.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<String>,
-    /// OAuth 1.0a Consumer Secret. Same.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_key_secret: Option<String>,
-    /// App-only Bearer token. Useful as a fallback for read-only
-    /// endpoints (search, tweet lookup) that don't need user
-    /// context.
+    /// App-only Bearer token. Used by `crate::x::http::Http::app_only`
+    /// for read-only endpoints (search, tweet lookup) that don't need
+    /// user context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bearer_token: Option<String>,
     /// RFC 3339 timestamp of the last successful save.
@@ -97,11 +90,9 @@ pub fn save(cfg: &XAppConfig, rt: &RuntimeConfig) -> Result<(), Error> {
 /// wins (caller is expected to stamp it to `now`).
 pub fn merge(existing: XAppConfig, incoming: XAppConfig) -> XAppConfig {
     XAppConfig {
-        client_id:      incoming.client_id.or(existing.client_id),
-        client_secret:  incoming.client_secret.or(existing.client_secret),
-        api_key:        incoming.api_key.or(existing.api_key),
-        api_key_secret: incoming.api_key_secret.or(existing.api_key_secret),
-        bearer_token:   incoming.bearer_token.or(existing.bearer_token),
-        saved_at:       incoming.saved_at.or(existing.saved_at),
+        client_id:     incoming.client_id.or(existing.client_id),
+        client_secret: incoming.client_secret.or(existing.client_secret),
+        bearer_token:  incoming.bearer_token.or(existing.bearer_token),
+        saved_at:      incoming.saved_at.or(existing.saved_at),
     }
 }

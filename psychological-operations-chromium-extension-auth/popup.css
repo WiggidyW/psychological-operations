@@ -44,6 +44,11 @@ button#bf_save:not(:disabled):hover {
   font-size: 11px;
   color: #444;
 }
+#x_app_form .hint {
+  font-size: 10px;
+  color: #888;
+  font-style: italic;
+}
 #x_app_form input {
   width: 100%;
   box-sizing: border-box;

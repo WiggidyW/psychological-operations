@@ -54,8 +54,9 @@ pub async fn run(cfg: &crate::run::Config) -> Result<crate::Output, Error> {
     eprintln!("  profile: {}", profile.display());
     eprintln!("  - sign into your X account if prompted, then on console.x.com");
     eprintln!("    create a Project + App and provision credits.");
-    eprintln!("  - on the App's keys-and-tokens page, click the extension toolbar");
-    eprintln!("    icon and paste the credentials into the form. Click Save.");
+    eprintln!("  - on the App's Keys and Tokens page, copy the Consumer Key,");
+    eprintln!("    Secret Key, and Bearer Token into the extension popup form.");
+    eprintln!("    Click Save.");
     eprintln!("  - on \"User authentication settings\": enable OAuth 2.0,");
     eprintln!("    select \"Read and write\" permissions, and register");
     eprintln!("    `http://127.0.0.1/callback` (host only, no port) as a");
