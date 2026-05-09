@@ -29,10 +29,9 @@ use serde_json::{json, Map, Value};
 use crate::error::Error;
 
 pub fn seed_profile_prefs(profile: &Path, pinned_extension_ids: &[&str]) -> Result<(), Error> {
-    let prefs_path = profile.join("Default").join("Preferences");
-    if let Some(parent) = prefs_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    let default_dir = profile.join("Default");
+    fs::create_dir_all(&default_dir)?;
+    let prefs_path = default_dir.join("Preferences");
 
     let mut prefs: Value = if prefs_path.exists() {
         let bytes = fs::read(&prefs_path)?;
@@ -49,9 +48,12 @@ pub fn seed_profile_prefs(profile: &Path, pinned_extension_ids: &[&str]) -> Resu
 
     seed_pinned_extensions(root, pinned_extension_ids)?;
     seed_no_session_restore(root)?;
+    mark_clean_exit(root)?;
 
     let serialized = serde_json::to_vec(&prefs)?;
     fs::write(&prefs_path, serialized)?;
+
+    wipe_session_files(&default_dir)?;
     Ok(())
 }
 
@@ -79,6 +81,37 @@ fn seed_pinned_extensions(
         if !pinned.iter().any(|v| v == &id_value) {
             pinned.push(id_value);
         }
+    }
+    Ok(())
+}
+
+// Chromium's "session crashed" detector keys off `profile.exit_type`.
+// If the previous exit was anything other than "Normal" — including
+// us forcibly killing Chromium on the parent's exit — Chromium
+// triggers session restore on next launch *regardless* of the
+// `restore_on_startup` pref. Mark the prior exit as Normal pre-launch
+// so the crash heuristic doesn't override our no-restore intent.
+fn mark_clean_exit(root: &mut Map<String, Value>) -> Result<(), Error> {
+    let profile = root
+        .entry("profile")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| Error::Other("Preferences \"profile\" is not an object".into()))?;
+    profile.insert("exit_type".into(), json!("Normal"));
+    profile.insert("exited_cleanly".into(), json!(true));
+    Ok(())
+}
+
+// Even with the right prefs, Chromium will re-open the previous
+// session if the on-disk session files are present. Wipe them so
+// there's literally nothing to restore.
+fn wipe_session_files(default_dir: &Path) -> Result<(), Error> {
+    for name in ["Last Session", "Last Tabs", "Current Session", "Current Tabs"] {
+        let _ = fs::remove_file(default_dir.join(name));
+    }
+    let sessions_dir = default_dir.join("Sessions");
+    if sessions_dir.exists() {
+        let _ = fs::remove_dir_all(&sessions_dir);
     }
     Ok(())
 }
