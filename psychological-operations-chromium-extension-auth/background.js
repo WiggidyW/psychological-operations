@@ -43,15 +43,20 @@ function send(msg) {
   });
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (!msg || typeof msg.kind !== "string") return false;
-
-  if (msg.kind === "popup_x_app_save") {
-    send({ kind: "x_app_save", credentials: msg.credentials })
-      .then((reply) => sendResponse(reply))
-      .catch((e) => sendResponse({ kind: "x_app_save_err", error: String(e.message || e) }));
-    return true;
-  }
-
-  return false;
+// Port-based listener (popup uses chrome.runtime.connect to avoid
+// the MV3 sendMessage / inactive-SW wake-up race).
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "popup") return;
+  port.onMessage.addListener((msg) => {
+    if (!msg || typeof msg.kind !== "string") return;
+    if (msg.kind === "popup_x_app_save") {
+      send({ kind: "x_app_save", credentials: msg.credentials })
+        .then((reply) => { try { port.postMessage(reply); } catch (_) {} })
+        .catch((e) => {
+          try {
+            port.postMessage({ kind: "x_app_save_err", error: String(e.message || e) });
+          } catch (_) {}
+        });
+    }
+  });
 });

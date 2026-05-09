@@ -36,7 +36,7 @@ xAppForm.addEventListener("submit", async (ev) => {
 
   setStatus(`saving ${nonEmpty} field${nonEmpty === 1 ? "" : "s"}…`);
   try {
-    const reply = await chrome.runtime.sendMessage({ kind: "popup_x_app_save", credentials });
+    const reply = await sendToBackground({ kind: "popup_x_app_save", credentials });
     if (reply && reply.kind === "x_app_save_ok") {
       setStatus(`saved ${nonEmpty} field${nonEmpty === 1 ? "" : "s"} to x_app.json`, "ok");
       // Clear inputs after a successful save so secrets don't linger
@@ -53,3 +53,32 @@ xAppForm.addEventListener("submit", async (ev) => {
     xAppSaveBtn.disabled = false;
   }
 });
+
+// chrome.runtime.sendMessage is unreliable on first call against an
+// inactive MV3 service worker ("Receiving end does not exist" race).
+// Use chrome.runtime.connect — opening a port reliably wakes the SW
+// and keeps it alive until we explicitly disconnect.
+function sendToBackground(msg) {
+  return new Promise((resolve, reject) => {
+    let port;
+    try { port = chrome.runtime.connect({ name: "popup" }); }
+    catch (e) { reject(e); return; }
+    let settled = false;
+    port.onMessage.addListener((reply) => {
+      if (settled) return;
+      settled = true;
+      port.disconnect();
+      resolve(reply);
+    });
+    port.onDisconnect.addListener(() => {
+      if (settled) return;
+      settled = true;
+      const err = chrome.runtime.lastError;
+      reject(new Error(err ? err.message : "background port disconnected"));
+    });
+    try { port.postMessage(msg); }
+    catch (e) {
+      if (!settled) { settled = true; reject(e); }
+    }
+  });
+}
