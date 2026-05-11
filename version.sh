@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # version.sh — set the version of every psychological-operations package
 # (and inter-package dependency reference) to a single value. Touches the
-# workspace Cargo.toml files and the Chromium extension manifest. Skips
-# Cargo.lock — that regenerates on next build.
+# workspace Cargo.toml files, the Chromium extension manifests, and our
+# objectiveai-plugin manifest (`objectiveai.json` at the repo root).
+# Skips Cargo.lock — that regenerates on next build.
 #
 # Usage:
 #   bash version.sh <new-version>
@@ -105,7 +106,9 @@ CARGO_TOMLS=(
 )
 
 MANIFEST_JSONS=(
-  psychological-operations-chromium-extension/manifest.json
+  psychological-operations-chromium-extension-scrape/manifest.json
+  psychological-operations-chromium-extension-auth/manifest.json
+  objectiveai.json
 )
 
 # ---------------------------------------------------------------------------
