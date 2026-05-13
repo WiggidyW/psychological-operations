@@ -1,5 +1,5 @@
-use objectiveai_cli_lib::output::{Error as PluginError, Level};
-use objectiveai_cli_lib::plugins::PluginOutput;
+use objectiveai_cli_sdk::output::{Error as PluginError, Level};
+use objectiveai_cli_sdk::plugins::PluginOutput;
 
 #[tokio::main]
 async fn main() {

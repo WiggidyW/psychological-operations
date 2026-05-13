@@ -46,12 +46,25 @@ fn format_remote_ref(path: &RemotePathCommitOptional) -> String {
     }
 }
 
-/// Locate the objectiveai CLI. Prefer PATH; fall back to the install script's
-/// default location at ~/.objectiveai/objectiveai(.exe) — the Windows installer
-/// only updates the user environment PATH, which isn't reflected in an already-
-/// running shell.
+/// Locate the objectiveai CLI used for subprocess scoring calls
+/// (`functions get`, `executions create`, …).
+///
+/// Resolution order:
+///   1. `PSYCHOLOGICAL_OPERATIONS_OBJECTIVEAI_BINARY` env var
+///      — explicit override. The integration-test harness uses this
+///      to point at a no-viewer release binary so test runs don't
+///      spawn viewer windows.
+///   2. `<HOME|USERPROFILE>/.objectiveai/objectiveai[.exe]` — the
+///      install script's default location. The Windows installer
+///      only updates user-env PATH, which isn't reflected in
+///      already-running shells, so this fallback is what makes the
+///      bare `objectiveai` invocation work after a fresh install.
+///   3. `PATH` lookup (last-resort bare name).
 pub fn objectiveai_binary(_cfg: &crate::run::Config) -> std::path::PathBuf {
     use std::path::PathBuf;
+    if let Ok(p) = std::env::var("PSYCHOLOGICAL_OPERATIONS_OBJECTIVEAI_BINARY") {
+        return PathBuf::from(p);
+    }
     let name = if cfg!(windows) { "objectiveai.exe" } else { "objectiveai" };
     if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
         let candidate = PathBuf::from(home).join(".objectiveai").join(name);
@@ -62,7 +75,54 @@ pub fn objectiveai_binary(_cfg: &crate::run::Config) -> std::path::PathBuf {
     PathBuf::from(name)
 }
 
+/// Scan a JSONL stdout stream and return the `value` of the LAST
+/// `notification` line whose `value` contains the requested top-level
+/// `key`. The post-2.0.4 objectiveai CLI emits multiple notifications
+/// per command: incremental progress (e.g. `log_stream_ready`) plus
+/// the final terminal payload (e.g. `execution`, `function`,
+/// `instructions`). Picking by key lets each caller wait for its
+/// specific terminal notification.
+///
+/// An `error` line short-circuits with the host's error message
+/// regardless of position.
+fn parse_notification_value(stdout: &str, key: &str) -> Result<serde_json::Value, crate::error::Error> {
+    let mut last_match: Option<serde_json::Value> = None;
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue; // skip non-JSON noise (warnings, panics)
+        };
+        match v.get("type").and_then(|t| t.as_str()) {
+            Some("notification") => {
+                if let Some(value) = v.get("value") {
+                    if value.get(key).is_some() {
+                        last_match = Some(value.clone());
+                    }
+                }
+            }
+            Some("error") => {
+                let msg = v.get("message").and_then(|m| m.as_str()).unwrap_or("(no message)");
+                return Err(crate::error::Error::ObjectiveAiCli(msg.to_string()));
+            }
+            _ => {}
+        }
+    }
+    last_match.ok_or_else(|| crate::error::Error::ObjectiveAiCli(
+        format!("no `notification` with field `{key}` in CLI stdout: {stdout}"),
+    ))
+}
+
 /// Fetch a remote function definition via the CLI and deserialize to inline.
+///
+/// The CLI now wraps `functions get` output as:
+///   `{"type":"notification","value":{"function":<GetFunctionResponse>}}`
+/// where `GetFunctionResponse` flattens `RemotePath` (remote/owner/…)
+/// alongside the function body (`type`, `description`, `input_schema`,
+/// `tasks`). We pluck the `function` field, drop the path metadata by
+/// deserializing as `FullInlineFunction` (serde ignores unknown fields),
+/// and rely on `InlineFunction` accepting the extra `description` /
+/// `input_schema` keys without complaint.
 fn fetch_function(path: &RemotePathCommitOptional, cfg: &crate::run::Config) -> Result<FullInlineFunction, crate::error::Error> {
     let ref_str = format_remote_ref(path);
     let output = std::process::Command::new(objectiveai_binary(cfg))
@@ -76,7 +136,9 @@ fn fetch_function(path: &RemotePathCommitOptional, cfg: &crate::run::Config) -> 
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let function: FullInlineFunction = serde_json::from_str(stdout.trim())?;
+    let value = parse_notification_value(&stdout, "function")?;
+    let function_value = &value["function"];
+    let function: FullInlineFunction = serde_json::from_value(function_value.clone())?;
     Ok(function)
 }
 
@@ -91,6 +153,10 @@ fn resolve_function(function: &FullInlineFunctionOrRemoteCommitOptional, cfg: &c
 /// Fetch a fresh function-execution `--instructions-id` from the CLI. The
 /// objectiveai CLI requires this token on every `executions create` call;
 /// it ties a specific execution to the current instructions revision.
+///
+/// Wire: `{"type":"notification","value":{"instructions":"<markdown>"}}`.
+/// The markdown body ends with an `Instructions ID: <id>` line — extract
+/// that ID and return it.
 fn fetch_instructions_id(cfg: &crate::run::Config) -> Result<String, crate::error::Error> {
     let output = std::process::Command::new(objectiveai_binary(cfg))
         .args(["functions", "executions", "instructions", "get"])
@@ -103,11 +169,16 @@ fn fetch_instructions_id(cfg: &crate::run::Config) -> Result<String, crate::erro
         ));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // The CLI prints a long preamble plus a final " Instructions ID: <id>" line.
-    let id = stdout.lines().rev()
+    let value = parse_notification_value(&stdout, "instructions")?;
+    let instructions = value["instructions"].as_str().ok_or_else(|| {
+        crate::error::Error::ObjectiveAiCli(
+            format!("instructions get notification `instructions` field is not a string: {value}"),
+        )
+    })?;
+    let id = instructions.lines().rev()
         .find_map(|l| l.trim().strip_prefix("Instructions ID:").map(|s| s.trim().to_string()))
         .ok_or_else(|| crate::error::Error::ObjectiveAiCli(
-            format!("instructions get returned no ID line: {stdout}"),
+            format!("instructions body missing `Instructions ID:` line: {instructions}"),
         ))?;
     Ok(id)
 }
@@ -178,77 +249,37 @@ fn run_function_execution(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Print stdout passthrough (log lines etc.)
-    print!("{stdout}");
+    // NOTE: we do NOT echo subprocess stdout — the host treats *our*
+    // stdout as a JSONL stream, and forwarding the inner CLI's JSONL
+    // verbatim would duplicate `begin`/`end` markers and confuse the
+    // host. Anything that needs to surface to the user goes through
+    // stderr or our own structured emit.
 
-    // The objectiveai CLI prints `Logs ID: <id>` to stdout the first
-    // time its writer task flushes a chunk to disk. The final score
-    // lives in the per-execution log file at
-    // <logs_dir>/functions/executions/<id>.json under
-    // ["output"]["output"]. Reading the log file is more robust than
-    // scanning stdout for the final result JSON, since stdout may
-    // contain other lines (viewer info, warnings, future telemetry).
-    let id = stdout.lines()
-        .find_map(|l| l.trim().strip_prefix("Logs ID:").map(|s| s.trim().to_string()))
-        .ok_or_else(|| crate::error::Error::ObjectiveAiCli(
-            format!("no `Logs ID:` line in stdout: {stdout}"),
-        ))?;
-
-    let log_path = objectiveai_logs_dir()
-        .join("functions").join("executions")
-        .join(format!("{id}.json"));
-
-    let bytes = std::fs::read(&log_path).map_err(|e| {
-        crate::error::Error::ObjectiveAiCli(format!(
-            "failed to read execution log {}: {e}", log_path.display(),
-        ))
-    })?;
-    let root: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| {
-        crate::error::Error::ObjectiveAiCli(format!(
-            "failed to parse execution log {}: {e}", log_path.display(),
-        ))
-    })?;
-
-    // Surface execution-level failures: a successful subprocess +
-    // present log file + parseable `output.output` is not the same
-    // as "scoring worked". When tasks fail, ObjectiveAI falls back
-    // to a uniform prior — silently, exit 0. Warn early so the
-    // fallback values aren't mistaken for real signal. The
-    // `Logs ID: <id>` line already on stdout provides traceability;
-    // we omit the id here to keep the warning byte-stable across runs.
-    if root.get("tasks_errors").and_then(|v| v.as_bool()) == Some(true) {
+    // Post-2.0.4 wire shape: the CLI emits multiple notifications per
+    // execution (progress markers like `log_stream_ready`, then the
+    // terminal `execution` payload). Pick the last one whose value
+    // carries `execution`. Wire:
+    //   {"type":"notification","value":{"execution":{"output":...,"errors":[...]}}}
+    let value = parse_notification_value(&stdout, "execution")?;
+    let execution = &value["execution"];
+    let errors = execution.get("errors").and_then(|e| e.as_array()).cloned().unwrap_or_default();
+    if !errors.is_empty() {
+        // Mirror the previous warning behavior: silent fallback to a
+        // uniform prior. Keep the message byte-stable across runs by
+        // omitting any per-execution IDs.
         eprintln!(
-            "warning: objectiveai execution flagged tasks_errors \
-             (one or more tasks errored — output is likely a fallback)"
+            "warning: objectiveai execution reported {} task error(s) \
+             — output may be a fallback",
+            errors.len(),
         );
     }
-    if let Some(err) = root.get("error").filter(|v| !v.is_null()) {
-        let body = serde_json::to_string(err)
-            .unwrap_or_else(|_| err.to_string());
-        eprintln!("warning: objectiveai execution error: {body}");
-    }
-
-    let inner = root.get("output").and_then(|o| o.get("output")).cloned()
-        .ok_or_else(|| crate::error::Error::ObjectiveAiCli(format!(
-            "execution log {} missing [\"output\"][\"output\"]", log_path.display(),
-        )))?;
+    let inner = execution.get("output").cloned().ok_or_else(|| {
+        crate::error::Error::ObjectiveAiCli(
+            format!("executions create notification missing `execution.output`: {value}"),
+        )
+    })?;
 
     Ok(ExecutionOutput { output: inner })
-}
-
-/// Mirrors `objectiveai::filesystem::Client::new` base-dir resolution
-/// (with the `env` feature): explicit > `CONFIG_BASE_DIR` env >
-/// `~/.objectiveai`. The objectiveai dep is pulled in with
-/// default-features = false, so we re-derive here rather than flip
-/// feature flags.
-fn objectiveai_logs_dir() -> std::path::PathBuf {
-    if let Ok(d) = std::env::var("CONFIG_BASE_DIR") {
-        return std::path::PathBuf::from(d).join("logs");
-    }
-    dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".objectiveai")
-        .join("logs")
 }
 
 /// Run a single stage's function execution against the given posts.

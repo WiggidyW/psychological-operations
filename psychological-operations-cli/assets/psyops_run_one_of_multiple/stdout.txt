@@ -1,6 +1,6 @@
-Logs ID: <id>
-{"output":[0.5,0.5,0.5,0.5]}
-0.0000 — https://x.com//status/1903404806175488944
-0.0000 — https://x.com//status/1908015976714396055
-0.0000 — https://x.com//status/1936392592589580124
-0.0000 — https://x.com//status/1959197364034543857
+{"type":"begin"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1903404806175488944"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1908015976714396055"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1936392592589580124"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1959197364034543857"}
+{"type":"end"}

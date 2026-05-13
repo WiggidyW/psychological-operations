@@ -1,7 +1,7 @@
-Logs ID: <id>
-{"output":[0.2615201358569398,0.1824442987853978,0.1924302214636003,0.1507166783192634,0.2128886655747986]}
-0.0000 — https://x.com//status/1914108159122829965
-0.0000 — https://x.com//status/1994949463567275514
-0.0000 — https://x.com//status/1984403790859208401
-0.0000 — https://x.com//status/1967377741153135303
-0.0000 — https://x.com//status/1988018662676731914
+{"type":"begin"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1914108159122829965"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1994949463567275514"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1984403790859208401"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1967377741153135303"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1988018662676731914"}
+{"type":"end"}

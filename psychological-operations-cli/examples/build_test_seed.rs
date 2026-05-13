@@ -1,7 +1,8 @@
 //! One-off seed-DB builder for integration tests.
 //!
 //! Tests must NOT execute SQL or call DB methods directly — but
-//! the committed `data.db` files under `assets/<name>/.psychological-operations/`
+//! the committed `data.db` files under
+//! `assets/<name>/.objectiveai/plugins/psychological-operations/`
 //! have to be built somehow. This binary is that "somehow":
 //! the author runs it to (re)generate the seed for a named
 //! scenario, then commits the resulting `data.db`.
@@ -9,11 +10,12 @@
 //! Usage:
 //!   cargo run -p psychological-operations-cli --example build_test_seed -- <scenario-name>
 //!
-//! Writes to `assets/<scenario-name>/.psychological-operations/data.db`.
+//! Writes to
+//! `assets/<scenario-name>/.objectiveai/plugins/psychological-operations/data.db`.
 //! Hardcoded scenarios live below — extend as new tests need
 //! seeded state.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use psychological_operations_cli::db::{Db, MediaUrl, Origin, Post};
 use psychological_operations_cli::run::Config;
@@ -22,9 +24,26 @@ fn assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets")
 }
 
-fn cfg_for(asset_dir: &std::path::Path) -> Config {
+/// Returns the asset's CONFIG_BASE_DIR mirror:
+/// `assets/<scenario>/.objectiveai/`. The plugin state lives one
+/// level deeper at `<base>/plugins/psychological-operations/`,
+/// which is where `Db::open` writes via `cfg.base_dir()`.
+fn asset_base(scenario: &str) -> PathBuf {
+    assets_dir().join(scenario).join(".objectiveai")
+}
+
+/// The plugin's state dir under the asset:
+/// `<asset_base>/plugins/psychological-operations/`. Used for
+/// log messages and ad-hoc path manipulation; runtime uses
+/// `Config::base_dir()` to derive the same location from
+/// `objectiveai_base_dir`.
+fn asset_plugin_dir(asset_base: &Path) -> PathBuf {
+    asset_base.join("plugins").join("psychological-operations")
+}
+
+fn cfg_for(asset_base: &Path) -> Config {
     Config {
-        base_dir: Some(asset_dir.to_string_lossy().into_owned()),
+        objectiveai_base_dir: Some(asset_base.to_string_lossy().into_owned()),
         ..Default::default()
     }
 }
@@ -40,17 +59,18 @@ const SHARED_PSYOP_COMMIT_SHA: &str = "82083cb385f9d2dc616126474601afd1e4d4050b"
 fn build_psyops_run_with_for_you_queue() {
     // Only touch the seed DB file — leave psyops/, config.json,
     // etc. intact (they're committed alongside the seed).
-    let asset = assets_dir().join("psyops_run_with_for_you_queue").join(".psychological-operations");
-    std::fs::create_dir_all(&asset).unwrap();
-    let _ = std::fs::remove_file(asset.join("data.db"));
-    let cfg = cfg_for(&asset);
+    let base = asset_base("psyops_run_with_for_you_queue");
+    let plugin_dir = asset_plugin_dir(&base);
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    let _ = std::fs::remove_file(plugin_dir.join("data.db"));
+    let cfg = cfg_for(&base);
     let db = Db::open(&cfg).expect("open db");
     for id in ["1900000000000000001", "1900000000000000002"] {
         let inserted = db.enqueue_for_you(id, "test-psyop", SHARED_PSYOP_COMMIT_SHA)
             .expect("enqueue");
         assert!(inserted);
     }
-    eprintln!("wrote seed: {}", asset.join("data.db").display());
+    eprintln!("wrote seed: {}", plugin_dir.join("data.db").display());
 }
 
 fn fake_post(id: &str, handle: &str, text: &str) -> Post {
@@ -66,10 +86,11 @@ fn fake_post(id: &str, handle: &str, text: &str) -> Post {
 }
 
 fn build_psyops_run_with_pre_hydrated_posts() {
-    let asset = assets_dir().join("psyops_run_with_pre_hydrated_posts").join(".psychological-operations");
-    std::fs::create_dir_all(&asset).unwrap();
-    let _ = std::fs::remove_file(asset.join("data.db"));
-    let cfg = cfg_for(&asset);
+    let base = asset_base("psyops_run_with_pre_hydrated_posts");
+    let plugin_dir = asset_plugin_dir(&base);
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    let _ = std::fs::remove_file(plugin_dir.join("data.db"));
+    let cfg = cfg_for(&base);
     let db = Db::open(&cfg).expect("open db");
 
     // Pre-hydrated posts: rows in posts + contents + sources for
@@ -88,15 +109,15 @@ fn build_psyops_run_with_pre_hydrated_posts() {
         ).expect("insert_post");
         assert!(inserted);
     }
-    eprintln!("wrote seed: {}", asset.join("data.db").display());
+    eprintln!("wrote seed: {}", plugin_dir.join("data.db").display());
 }
 
 /// Replays the harness's git-init in a tmp dir against the
 /// already-on-disk fixture and returns the resulting commit SHA.
 /// Use when a scenario's psyop.json content varies between runs
 /// (so SHARED_PSYOP_COMMIT_SHA is the wrong value to hardcode).
-fn fixture_commit_sha(asset: &std::path::Path, psyop_name: &str) -> String {
-    let psyop_json = asset.join("psyops").join(psyop_name).join("psyop.json");
+fn fixture_commit_sha(plugin_dir: &Path, psyop_name: &str) -> String {
+    let psyop_json = plugin_dir.join("psyops").join(psyop_name).join("psyop.json");
     let content = std::fs::read_to_string(&psyop_json).expect("read fixture psyop.json");
     let tmp = std::env::temp_dir().join(format!(
         "psyops-test-seed-{}-{}",
@@ -119,16 +140,17 @@ fn fixture_commit_sha(asset: &std::path::Path, psyop_name: &str) -> String {
 }
 
 fn build_psyops_run_with_pre_queued_deliveries() {
-    let asset = assets_dir().join("psyops_run_with_pre_queued_deliveries").join(".psychological-operations");
-    std::fs::create_dir_all(&asset).unwrap();
-    let _ = std::fs::remove_file(asset.join("data.db"));
-    let cfg = cfg_for(&asset);
+    let base = asset_base("psyops_run_with_pre_queued_deliveries");
+    let plugin_dir = asset_plugin_dir(&base);
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    let _ = std::fs::remove_file(plugin_dir.join("data.db"));
+    let cfg = cfg_for(&base);
     let db = Db::open(&cfg).expect("open db");
 
     // The fixture's content has queries set, so the SHA differs
     // from SHARED_PSYOP_COMMIT_SHA. Compute it on the fly to match
     // whatever the harness will produce.
-    let sha = fixture_commit_sha(&asset, "test-psyop");
+    let sha = fixture_commit_sha(&plugin_dir, "test-psyop");
 
     let target_json = r#"{"type":"stdout","mode":"urls"}"#;
     let post_ids_json = r#"["1900000000000000111","1900000000000000222"]"#;
@@ -138,14 +160,15 @@ fn build_psyops_run_with_pre_queued_deliveries() {
         target_json,
         post_ids_json,
     ).expect("enqueue_delivery");
-    eprintln!("wrote seed: {} (psyop sha {sha})", asset.join("data.db").display());
+    eprintln!("wrote seed: {} (psyop sha {sha})", plugin_dir.join("data.db").display());
 }
 
 fn build_targets_deliver_drains_queue() {
-    let asset = assets_dir().join("targets_deliver_drains_queue").join(".psychological-operations");
-    std::fs::create_dir_all(&asset).unwrap();
-    let _ = std::fs::remove_file(asset.join("data.db"));
-    let cfg = cfg_for(&asset);
+    let base = asset_base("targets_deliver_drains_queue");
+    let plugin_dir = asset_plugin_dir(&base);
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    let _ = std::fs::remove_file(plugin_dir.join("data.db"));
+    let cfg = cfg_for(&base);
     let db = Db::open(&cfg).expect("open db");
 
     // Two pre-queued rows: one stdout-urls + one stdout-json. The
@@ -164,7 +187,7 @@ fn build_targets_deliver_drains_queue() {
             post_ids_json,
         ).expect("enqueue_delivery");
     }
-    eprintln!("wrote seed: {}", asset.join("data.db").display());
+    eprintln!("wrote seed: {}", plugin_dir.join("data.db").display());
 }
 
 fn main() {

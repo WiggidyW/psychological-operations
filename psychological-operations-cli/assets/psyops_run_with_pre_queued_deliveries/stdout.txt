@@ -1,9 +1,9 @@
-Logs ID: <id>
-{"output":[0.5,0.5,0.5,0.5,0.5]}
-https://x.com//status/1900000000000000111
-https://x.com//status/1900000000000000222
-0.0000 — https://x.com//status/1903406987036451522
-0.0000 — https://x.com//status/1906632026254504392
-0.0000 — https://x.com//status/1927205321167945926
-0.0000 — https://x.com//status/1940845390324286270
-0.0000 — https://x.com//status/1999174102579864426
+{"type":"begin"}
+{"type":"notification","value":"https://x.com//status/1900000000000000111"}
+{"type":"notification","value":"https://x.com//status/1900000000000000222"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1903406987036451522"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1906632026254504392"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1927205321167945926"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1940845390324286270"}
+{"type":"notification","value":"0.0000 — https://x.com//status/1999174102579864426"}
+{"type":"end"}

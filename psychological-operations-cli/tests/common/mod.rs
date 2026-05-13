@@ -1,21 +1,28 @@
 //! Integration-test harness. Each test:
 //!   1. Constructs a `TestEnv`. The constructor copies the
 //!      committed initial state from
-//!      `assets/<name>/.psychological-operations/` (crate-root
-//!      `assets/`, NOT under `tests/`) to the runtime location
-//!      `tests/.psychological-operations-<name>/`. Mutations
-//!      land on the copy.
-//!   2. Spawns our `psychological-operations` binary as a
-//!      subprocess via `TestEnv::run` with per-call env vars.
+//!      `assets/<name>/.objectiveai/` (crate-root `assets/`, NOT
+//!      under `tests/`) to the runtime CONFIG_BASE_DIR
+//!      `tests/.t-<name>/.objectiveai/`. Then it manually copies
+//!      our built binary to
+//!      `<base>/plugins/psychological-operations/plugin[.exe]` so
+//!      the objectiveai host can dispatch to it.
+//!   2. Spawns the `objectiveai` host binary with
+//!      `psychological-operations <subcmd> …` args — exercising
+//!      the real `objectiveai psychological-operations <subcmd>`
+//!      dispatch path, not our binary directly.
 //!   3. Captures stdout + stderr.
 //!   4. Asserts against committed snapshots under
-//!      `assets/<name>/{stdout,stderr}.txt`.
+//!      `assets/<name>/{stdout,stderr}.txt`. The host wraps our
+//!      plugin's PluginOutput stream with `{"type":"begin"}` /
+//!      `{"type":"end"}` bookend lines on stdout.
 //!
 //! Each test asset folder is laid out:
 //!   assets/<name>/
-//!   ├── .psychological-operations/   # initial state (committed)
-//!   ├── stdout.txt                   # expected stdout
-//!   └── stderr.txt                   # expected stderr
+//!   ├── .objectiveai/                                   # initial state (committed)
+//!   │   └── plugins/psychological-operations/...        # our state lives here
+//!   ├── stdout.txt                                      # expected stdout
+//!   └── stderr.txt                                      # expected stderr
 //!
 //! Tests run in PARALLEL — env vars are per-subprocess
 //! (`Command::env`), never set on the test process itself.
@@ -34,7 +41,6 @@ fn manifest_dir() -> PathBuf { PathBuf::from(env!("CARGO_MANIFEST_DIR")) }
 fn repo_root() -> PathBuf { manifest_dir().join("..") }
 fn tests_dir() -> PathBuf { manifest_dir().join("tests") }
 fn assets_dir() -> PathBuf { manifest_dir().join("assets") }
-fn objectiveai_state_dir() -> PathBuf { tests_dir().join(".objectiveai") }
 fn target_binaries_dir() -> PathBuf { tests_dir().join(".target-binaries") }
 
 /// Run `psychological-operations-chromium/build.sh` once per
@@ -57,6 +63,7 @@ fn ensure_chromium_bundle() {
         assert!(status.success(), "psychological-operations-chromium build failed");
     });
 }
+
 
 /// Build our `psychological-operations` binary once per cargo-test
 /// process. Subsequent calls return the cached path.
@@ -115,80 +122,64 @@ fn bash_command() -> &'static Path {
     }).as_path()
 }
 
-/// Build a sister-bundle that `objectiveai-api`'s `build.rs`
-/// validates before compiling. `script` is relative to the
-/// objectiveai workspace root. The build scripts are idempotent
-/// — fingerprint-short-circuit when source hashes haven't
-/// changed, so repeat invocations are near-instant.
-fn ensure_objectiveai_bundle(script_rel: &str, args: &[&str]) {
-    let oai_root = repo_root().join("objectiveai");
-    let status = Command::new(bash_command())
-        .arg(script_rel)
-        .args(args)
-        .current_dir(&oai_root)
-        .status()
-        .expect("spawn bash <bundle build.sh>");
-    assert!(
-        status.success(),
-        "objectiveai bundle build failed: bash {script_rel} {args:?}",
-    );
+/// Version of the objectiveai host binary the test harness downloads.
+/// Bump this when you want tests to run against a newer release
+/// (snapshots are wire-format-coupled to the host version, so a bump
+/// often requires `UPDATE_PSYOPS_SNAPSHOTS=1` regen alongside it).
+const OBJECTIVEAI_VERSION: &str = "2.0.4";
+
+/// Filename for the prebuilt `objectiveai` release asset on the
+/// current host, matching the upload convention in
+/// `objectiveai/.github/workflows/release.yml`. We pull the
+/// `-no-viewer` variant because the Tauri viewer is dead weight for
+/// the score-path tests.
+fn objectiveai_asset_name() -> &'static str {
+    if      cfg!(all(target_os = "windows", target_arch = "x86_64"))  { "objectiveai-windows-x86_64-no-viewer.exe" }
+    else if cfg!(all(target_os = "macos",   target_arch = "aarch64")) { "objectiveai-macos-aarch64-no-viewer" }
+    else if cfg!(all(target_os = "macos",   target_arch = "x86_64"))  { "objectiveai-macos-x86_64-no-viewer" }
+    else if cfg!(all(target_os = "linux",   target_arch = "aarch64")) { "objectiveai-linux-aarch64-no-viewer" }
+    else if cfg!(all(target_os = "linux",   target_arch = "x86_64"))  { "objectiveai-linux-x86_64-no-viewer" }
+    else { panic!("unsupported host platform — extend objectiveai_asset_name()") }
 }
 
-/// Build `objectiveai-cli` once per cargo-test process.
-/// `viewer` feature disabled — viewer pulls in ratatui and is
-/// unrelated to the score path. Cargo's incremental build means
-/// the second + later cargo-test runs only do a fingerprint
-/// check (sub-second) when nothing changed.
+/// Download (once) and cache the prebuilt `objectiveai` host binary
+/// from the GitHub release tagged `v<OBJECTIVEAI_VERSION>`. Subsequent
+/// test-process invocations reuse the cached path.
+///
+/// Cache layout: `tests/.target-binaries/objectiveai-release/objectiveai-v<ver>-<asset>`.
+/// The version-prefixed filename means a `OBJECTIVEAI_VERSION` bump
+/// invalidates the cache automatically — no manual cleanup, no hash
+/// check required.
 pub fn objectiveai_binary() -> &'static Path {
     static BIN: OnceLock<PathBuf> = OnceLock::new();
     BIN.get_or_init(|| {
-        // Pre-built sister bundles required by objectiveai-api's
-        // build.rs. Both fingerprint-short-circuit on subsequent
-        // calls.
-        ensure_objectiveai_bundle(
-            "objectiveai-mcp-filesystem/build.sh",
-            // Filesystem MCP is always linux-musl regardless of
-            // the host (Docker injection target).
-            &["--target", "x86_64-unknown-linux-musl", "--release"],
-        );
-        ensure_objectiveai_bundle(
-            "objectiveai-claude-agent-sdk-runner/build.sh",
-            // Built for the test host; pin --target so
-            // fingerprint.sh doesn't need rustc on PATH.
-            &["--target", host_triple(), "--release"],
-        );
-
-        let target = target_binaries_dir().join("objectiveai");
-        std::fs::create_dir_all(&target).expect("create objectiveai target dir");
-        let manifest = repo_root()
-            .join("objectiveai")
-            .join("objectiveai-cli")
-            .join("Cargo.toml");
-        let status = Command::new(env!("CARGO"))
-            .args([
-                "build",
-                "--manifest-path", manifest.to_str().unwrap(),
-                "--no-default-features",
-                // `updater` dropped: phones home to GitHub on every
-                // invocation — non-deterministic + slow + leaks
-                // network errors into stderr snapshots. `viewer`
-                // also dropped (ratatui dep, unused by score path).
-                "--features", "rustpython,systempython,claude-agent-sdk",
-                "--release",
-                "--target-dir", target.to_str().unwrap(),
-            ])
-            .status()
-            .expect("spawn cargo build objectiveai-cli");
-        assert!(status.success(), "objectiveai-cli build failed");
-        let exe = if cfg!(windows) { "objectiveai-cli.exe" } else { "objectiveai-cli" };
-        target.join("release").join(exe)
+        let cache_dir = target_binaries_dir().join("objectiveai-release");
+        std::fs::create_dir_all(&cache_dir).expect("create objectiveai cache dir");
+        let asset = objectiveai_asset_name();
+        let cached = cache_dir.join(format!("objectiveai-v{OBJECTIVEAI_VERSION}-{asset}"));
+        if !cached.exists() {
+            let url = format!(
+                "https://github.com/ObjectiveAI/objectiveai/releases/download/v{OBJECTIVEAI_VERSION}/{asset}",
+            );
+            eprintln!("downloading objectiveai v{OBJECTIVEAI_VERSION}: {url}");
+            let bytes = reqwest::blocking::get(&url)
+                .and_then(|r| r.error_for_status())
+                .and_then(|r| r.bytes())
+                .unwrap_or_else(|e| panic!("download {url}: {e}"));
+            std::fs::write(&cached, &bytes)
+                .unwrap_or_else(|e| panic!("write {}: {e}", cached.display()));
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(&cached)
+                    .expect("downloaded binary perms").permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&cached, perms)
+                    .expect("chmod downloaded binary");
+            }
+        }
+        cached
     }).as_path()
-}
-
-fn ensure_objectiveai_state_dir() -> PathBuf {
-    let dir = objectiveai_state_dir();
-    std::fs::create_dir_all(&dir).expect("create .objectiveai state dir");
-    dir
 }
 
 /// Generic per-psyop git-init: walks `psyops_dir`, and for each
@@ -199,8 +190,8 @@ fn ensure_objectiveai_state_dir() -> PathBuf {
 /// `data.db` rows reference).
 ///
 /// Asset folders just drop in whatever psyops they need under
-/// `.psychological-operations/psyops/<name>/psyop.json`; the
-/// harness handles all of them uniformly.
+/// `.objectiveai/plugins/psychological-operations/psyops/<name>/psyop.json`;
+/// the harness handles all of them uniformly.
 fn git_init_psyops(psyops_dir: &Path) {
     let cfg = psychological_operations_cli::run::Config {
         commit_author_name:  Some("psyops-test".into()),
@@ -262,30 +253,58 @@ impl CapturedOutput {
 
 impl TestEnv {
     /// Pre-wipe the runtime per-test dir, then copy the committed
-    /// initial state from `assets/<name>/.psychological-operations/`
-    /// if present. After copy, generically git-init every psyop
-    /// dir found under `psyops/` so the on-disk state matches what
-    /// `psyops publish` would have produced (committed assets
-    /// can't include nested .git dirs without git treating them
-    /// as embedded repos).
+    /// initial state from `assets/<name>/.objectiveai/` if present.
+    /// Then install our plugin binary into the runtime's plugins
+    /// subdir, and generically git-init every psyop dir found under
+    /// `psyops/` so the on-disk state matches what `psyops publish`
+    /// would have produced (committed assets can't include nested
+    /// `.git` dirs without git treating them as embedded repos).
     pub fn new(name: &str) -> Self {
-        let _ = ensure_objectiveai_state_dir();
-        // base_dir = the per-test CONFIG_BASE_DIR (acts as
-        // objectiveai's base too). Our state nests inside as
-        // `<base>/plugins/.psychological-operations/` per the
-        // plugin-conversion layout — matching Config::base_dir().
-        // Keep this prefix tight — Windows MAX_PATH (260) bites when
-        // git2 creates .git/ deep under
-        // `<base>/plugins/.psychological-operations/psyops/<name>/.git/...`.
-        let base = tests_dir().join(format!(".t-{name}"));
+        // Per-test runtime layout mirrors the live install:
+        //
+        //   <root>/.t-<name>/.objectiveai/                    ← CONFIG_BASE_DIR
+        //   <root>/.t-<name>/.objectiveai/plugins/psychological-operations/
+        //     ├── plugin[.exe]                                ← installed binary
+        //     ├── data.db / psyops/ / config.json / ...       ← our state
+        //
+        // Root is the OS temp dir, not `tests/` — the workspace path
+        // (~80 chars on this machine) + the layout below (~70 chars
+        // including `psyops/<name>/.git/`) plus git2's own
+        // sub-paths blow past Windows MAX_PATH (260). Using
+        // `std::env::temp_dir()` keeps the prefix to ~30 chars on
+        // Windows (`C:\Users\<user>\AppData\Local\Temp\`) which
+        // leaves headroom for `.git/objects/<sha>/...` files.
+        let runtime = std::env::temp_dir().join("psyops-t").join(name);
+        let _ = std::fs::remove_dir_all(&runtime);
+        let base = runtime.join(".objectiveai");
         let state = base.join("plugins").join("psychological-operations");
-        let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&state).expect("create test state dir");
 
+        // Copy the asset's .objectiveai/ verbatim into the runtime
+        // CONFIG_BASE_DIR. Asset structure:
+        //   assets/<name>/.objectiveai/plugins/psychological-operations/data.db
+        //   assets/<name>/.objectiveai/plugins/psychological-operations/psyops/...
         let assets = assets_dir().join(name);
-        let initial = assets.join(".psychological-operations");
+        let initial = assets.join(".objectiveai");
         if initial.exists() {
-            copy_dir_recursive(&initial, &state);
+            copy_dir_recursive(&initial, &base);
+        }
+
+        // Manual plugin install: copy our built binary to the
+        // per-plugin subdir as `plugin[.exe]`, matching the layout
+        // `objectiveai plugins install` produces from GitHub. We use
+        // manual copy because the install command requires network +
+        // a published release.
+        let plugin_bin = if cfg!(windows) { "plugin.exe" } else { "plugin" };
+        std::fs::copy(psyops_binary(), state.join(plugin_bin))
+            .expect("install plugin binary");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let p = state.join(plugin_bin);
+            let mut perms = std::fs::metadata(&p).expect("plugin perms").permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&p, perms).expect("chmod plugin");
         }
 
         let psyops_dir = state.join("psyops");
@@ -296,13 +315,18 @@ impl TestEnv {
         Self { name: name.into(), dir: state, base, assets }
     }
 
-    /// Build a `Command` for our CLI with the right env vars set
-    /// (per-subprocess, not per-process). Includes pinned
-    /// commit-author + commit-time so any `psyops publish`
-    /// invocations produce byte-stable commit SHAs.
+    /// Build a `Command` for invoking our plugin via the objectiveai
+    /// host (the real dispatch path: `objectiveai psychological-operations
+    /// <subcmd>`). Per-subprocess env, not per-process.
     pub fn cmd(&self) -> Command {
-        let mut cmd = Command::new(psyops_binary());
+        let mut cmd = Command::new(objectiveai_binary());
+        cmd.arg("psychological-operations");
         cmd.env("CONFIG_BASE_DIR",                              &self.base);
+        // Score-path subprocesses re-invoke the objectiveai CLI for
+        // `functions get` / `executions create`. Point them at the
+        // same no-viewer release binary we downloaded for the host so
+        // tests don't spawn viewer windows.
+        cmd.env("PSYCHOLOGICAL_OPERATIONS_OBJECTIVEAI_BINARY",  objectiveai_binary());
         cmd.env("PSYCHOLOGICAL_OPERATIONS_MOCK_X_API",          "true");
         cmd.env("PSYCHOLOGICAL_OPERATIONS_COMMIT_AUTHOR_NAME",  "psyops-test");
         cmd.env("PSYCHOLOGICAL_OPERATIONS_COMMIT_AUTHOR_EMAIL", "test@psyops.invalid");
@@ -335,13 +359,16 @@ impl TestEnv {
 
 impl Drop for TestEnv {
     fn drop(&mut self) {
+        // Wipe the entire runtime dir (parent of `.objectiveai`),
+        // not just `self.base` — keeps tests/ clean between runs.
+        let runtime = self.base.parent().unwrap_or(&self.base).to_path_buf();
         if std::env::var_os("PSYOPS_KEEP_TEST_STATE").is_some() {
             eprintln!(
                 "PSYOPS_KEEP_TEST_STATE — leaving {}",
-                self.dir.display(),
+                runtime.display(),
             );
             return;
         }
-        let _ = std::fs::remove_dir_all(&self.base);
+        let _ = std::fs::remove_dir_all(&runtime);
     }
 }
