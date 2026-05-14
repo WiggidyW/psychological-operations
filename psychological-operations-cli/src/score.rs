@@ -319,10 +319,6 @@ pub fn score(stage: &Stage, posts: Vec<Post>, seed: Option<i64>, cfg: &crate::ru
         .map(|p| ScoredPost { post: p, score: 0.0 })
         .collect();
 
-    crate::emit::emit(crate::events::Event::ScoringStarted {
-        count: scored.len(),
-    });
-
     let function = resolve_function(&stage.function, cfg)?;
     let is_vector = is_vector_function(&function);
 

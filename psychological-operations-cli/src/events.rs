@@ -11,9 +11,8 @@
 //! Wire shape (Notification example):
 //!
 //! ```jsonc
-//! // ScoringComplete { psyop: "demo", scored: 5, survivors: 3, stages: 2 }
-//! {"type":"notification",
-//!  "value":{"event":"scoring_complete","psyop":"demo","scored":5,"survivors":3,"stages":2}}
+//! // StageBegin { stage: 0 }
+//! {"type":"notification","value":{"event":"stage_begin","stage":0}}
 //! ```
 //!
 //! Wire shape (Error example):
@@ -34,28 +33,8 @@ pub enum Event {
     StageEnd   { stage: usize },
 
     // ── psyop run pipeline ───────────────────────────────────
-    FilterComplete {
-        psyop: String,
-        accepted: usize,
-        min_posts: u64,
-        max_posts: u64,
-    },
-    PostsHydrated   { psyop: String, count: usize },
-    HydratingQueue  { psyop: String, count: usize },
-    StageEmpty      { psyop: String, stage: usize },
-    ScoringStarted  { count: usize },
-    ScoringComplete {
-        psyop: String,
-        scored: usize,
-        survivors: usize,
-        stages: usize,
-    },
-    ContentsDropped  { psyop: String, count: usize },
-    DeliveryComplete {
-        psyop: String,
-        delivered: usize,
-        failed: usize,
-    },
+    HydratingQueue { psyop: String, count: usize },
+    StageEmpty     { psyop: String, stage: usize },
 
     // ── query / ingest ───────────────────────────────────────
     QuerySkipped  { psyop: String, query: String, reason: String },

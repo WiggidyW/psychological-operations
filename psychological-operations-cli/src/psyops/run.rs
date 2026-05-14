@@ -93,12 +93,6 @@ pub async fn run_psyop(
 
         // 3. Filter with priority resolution.
         let accepted = filter_with_priority(&psyop, entries)?;
-        crate::emit::emit(crate::events::Event::FilterComplete {
-            psyop: name.to_string(),
-            accepted: accepted.len(),
-            min_posts: psyop.min_posts,
-            max_posts: psyop.max_posts,
-        });
 
         // 4. Eligibility — run queries if we're short.
         if (accepted.len() as u64) < psyop.min_posts {
@@ -141,11 +135,7 @@ pub async fn run_psyop(
 
         // 9. Reap content for every post under (name, commit), scored
         //    or not.
-        let dropped = db.drop_psyop_contents(name, &commit)?;
-        crate::emit::emit(crate::events::Event::ContentsDropped {
-            psyop: name.to_string(),
-            count: dropped,
-        });
+        let _dropped = db.drop_psyop_contents(name, &commit)?;
 
         // 10. Enqueue a delivery_queue row per (target, survivors).
         if !result.survivors.is_empty() {
@@ -170,12 +160,7 @@ pub async fn run_psyop(
         }
 
         // 11. Drain the queue (filtered to this psyop).
-        let summary = crate::targets::drain_queue(&db, Some(name), cfg).await?;
-        crate::emit::emit(crate::events::Event::DeliveryComplete {
-            psyop: name.to_string(),
-            delivered: summary.delivered,
-            failed: summary.failed,
-        });
+        let _summary = crate::targets::drain_queue(&db, Some(name), cfg).await?;
 
         return Ok(crate::Output::Empty);
     }
@@ -221,11 +206,6 @@ fn score_pipeline(
             })
         })
         .collect();
-
-    crate::emit::emit(crate::events::Event::PostsHydrated {
-        psyop: name.to_string(),
-        count: current.len(),
-    });
 
     // Each post's score = the LAST stage that scored it. Survivors
     // of every stage end up with the final stage's score; posts
@@ -276,12 +256,6 @@ fn score_pipeline(
         crate::emit::emit(crate::events::Event::StageEnd { stage: i });
     }
 
-    crate::emit::emit(crate::events::Event::ScoringComplete {
-        psyop: name.to_string(),
-        scored: last_scores.len(),
-        survivors: survivors.len(),
-        stages: psyop.stages.len(),
-    });
     Ok(ScoreResult { last_scores, survivors })
 }
 

@@ -1,14 +1,7 @@
 {"type":"begin"}
-{"type":"notification","value":{"event":"filter_complete","psyop":"test-psyop","accepted":0,"min_posts":2,"max_posts":10}}
 {"type":"notification","value":{"event":"query_complete","psyop":"test-psyop","query":"tweet ranker vector swarm","count":5}}
-{"type":"notification","value":{"event":"filter_complete","psyop":"test-psyop","accepted":5,"min_posts":2,"max_posts":10}}
-{"type":"notification","value":{"event":"posts_hydrated","psyop":"test-psyop","count":5}}
 {"type":"notification","value":{"event":"stage_begin","stage":0}}
-{"type":"notification","value":{"event":"scoring_started","count":5}}
 {"type":"notification","value":{"log_stream_ready":"<id>"}}
 {"type":"notification","value":{"event":"stage_end","stage":0}}
-{"type":"notification","value":{"event":"scoring_complete","psyop":"test-psyop","scored":5,"survivors":5,"stages":1}}
-{"type":"notification","value":{"event":"contents_dropped","psyop":"test-psyop","count":0}}
 {"type":"notification","value":{"event":"target_delivered","body":{"kind":"psyop","name":"test-psyop","results":[{"score":0.2615201358569398,"id":"1914108159122829965","handle":"mockuser_07227aa598a5728d","text":"","images":[],"videos":[],"created":"","url":"https://x.com/mockuser_07227aa598a5728d/status/1914108159122829965"},{"score":0.2128886655747986,"id":"1994949463567275514","handle":"mockuser_9732a2d02dc295fa","text":"","images":[],"videos":[],"created":"","url":"https://x.com/mockuser_9732a2d02dc295fa/status/1994949463567275514"},{"score":0.1924302214636003,"id":"1984403790859208401","handle":"mockuser_b16b53835b5206d1","text":"","images":[],"videos":[],"created":"","url":"https://x.com/mockuser_b16b53835b5206d1/status/1984403790859208401"},{"score":0.1824442987853978,"id":"1967377741153135303","handle":"mockuser_5b240342973d6ac7","text":"","images":[],"videos":[],"created":"","url":"https://x.com/mockuser_5b240342973d6ac7/status/1967377741153135303"},{"score":0.1507166783192634,"id":"1988018662676731914","handle":"mockuser_fdcc1814628f980a","text":"","images":[],"videos":[],"created":"","url":"https://x.com/mockuser_fdcc1814628f980a/status/1988018662676731914"}]}}}
-{"type":"notification","value":{"event":"delivery_complete","psyop":"test-psyop","delivered":2,"failed":0}}
 {"type":"end"}
