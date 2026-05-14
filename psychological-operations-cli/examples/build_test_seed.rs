@@ -171,11 +171,33 @@ fn build_targets_deliver_drains_queue() {
     let cfg = cfg_for(&base);
     let db = Db::open(&cfg).expect("open db");
 
+    // In production, a delivery_queue row only exists for posts
+    // already in `posts` + `scores` (run.rs queues *after*
+    // scoring). The drain path joins those tables to populate
+    // stub `ScoredPost`s with handle + score — so the seed needs
+    // to insert both.
+    let post_ids = [
+        ("1900000000000000111", "alice", 0.7531),
+        ("1900000000000000222", "bob",   0.4218),
+    ];
+    for &(id, handle, _) in &post_ids {
+        let inserted = db.insert_post(
+            &fake_post(id, handle, ""),
+            "test-psyop",
+            SHARED_PSYOP_COMMIT_SHA,
+            &Origin::ForYou,
+        ).expect("insert_post");
+        assert!(inserted);
+    }
+    let ids: Vec<String> = post_ids.iter().map(|(id, _, _)| id.to_string()).collect();
+    let scores: Vec<f64> = post_ids.iter().map(|(_, _, score)| *score).collect();
+    db.set_scores(&ids, &scores).expect("set_scores");
+
     // Two pre-queued rows: one stdout-urls + one stdout-json. The
     // psyop.json fixture matches SHARED_PSYOP_COMMIT_SHA exactly
     // (no queries, just min_posts: 2 + a single mock stage), so we
     // can pin the SHA constant rather than recomputing.
-    let post_ids_json = r#"["1900000000000000111","1900000000000000222"]"#;
+    let post_ids_json = serde_json::to_string(&ids).expect("encode ids");
     for target_json in [
         r#"{"type":"stdout","mode":"urls"}"#,
         r#"{"type":"stdout","mode":"json"}"#,
@@ -184,7 +206,7 @@ fn build_targets_deliver_drains_queue() {
             "test-psyop",
             SHARED_PSYOP_COMMIT_SHA,
             target_json,
-            post_ids_json,
+            &post_ids_json,
         ).expect("enqueue_delivery");
     }
     eprintln!("wrote seed: {}", plugin_dir.join("data.db").display());
