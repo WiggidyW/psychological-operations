@@ -10,5 +10,5 @@
 {"type":"notification","value":{"event":"contents_dropped","psyop":"test-psyop","count":0}}
 {"type":"notification","value":{"event":"target_delivered","transport":"stdout","mode":"urls_with_scores","score":0.5,"url":"https://x.com/mockuser_f3fd20cdbf812054/status/1900000000000000001"}}
 {"type":"notification","value":{"event":"target_delivered","transport":"stdout","mode":"urls_with_scores","score":0.5,"url":"https://x.com/mockuser_24d9de5b78b6d5fb/status/1900000000000000002"}}
-{"type":"notification","value":{"event":"delivery_complete","psyop":"test-psyop","delivered":2,"pending":2,"failed":0}}
+{"type":"notification","value":{"event":"delivery_complete","psyop":"test-psyop","delivered":2,"failed":0}}
 {"type":"end"}

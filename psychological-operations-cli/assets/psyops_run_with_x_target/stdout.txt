@@ -9,5 +9,5 @@
 {"type":"notification","value":{"event":"stage_end","stage":0}}
 {"type":"notification","value":{"event":"scoring_complete","psyop":"test-psyop","scored":4,"survivors":4,"stages":1}}
 {"type":"notification","value":{"event":"contents_dropped","psyop":"test-psyop","count":0}}
-{"type":"notification","value":{"event":"delivery_complete","psyop":"test-psyop","delivered":1,"pending":1,"failed":0}}
+{"type":"notification","value":{"event":"delivery_complete","psyop":"test-psyop","delivered":1,"failed":0}}
 {"type":"end"}

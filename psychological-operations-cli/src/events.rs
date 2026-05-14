@@ -54,7 +54,6 @@ pub enum Event {
     DeliveryComplete {
         psyop: String,
         delivered: usize,
-        pending: usize,
         failed: usize,
     },
 

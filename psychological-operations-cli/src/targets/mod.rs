@@ -68,7 +68,6 @@ impl Commands {
 
 #[derive(serde::Serialize)]
 pub struct DeliverySummary {
-    pub pending:   usize,
     pub delivered: usize,
     pub failed:    usize,
 }
@@ -86,7 +85,6 @@ pub async fn drain_queue(
     use destinations::{send_one, Subject};
 
     let rows = db.list_pending_deliveries(psyop_filter)?;
-    let pending = rows.len();
     let mut delivered = 0usize;
     let mut failed = 0usize;
 
@@ -169,5 +167,5 @@ pub async fn drain_queue(
         }
     }
 
-    Ok(DeliverySummary { pending, delivered, failed })
+    Ok(DeliverySummary { delivered, failed })
 }

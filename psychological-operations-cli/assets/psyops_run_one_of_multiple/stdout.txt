@@ -13,5 +13,5 @@
 {"type":"notification","value":{"event":"target_delivered","transport":"stdout","mode":"urls_with_scores","score":0.5,"url":"https://x.com/mockuser_29be9e97fac2e197/status/1908015976714396055"}}
 {"type":"notification","value":{"event":"target_delivered","transport":"stdout","mode":"urls_with_scores","score":0.5,"url":"https://x.com/mockuser_568c1e05692de75c/status/1936392592589580124"}}
 {"type":"notification","value":{"event":"target_delivered","transport":"stdout","mode":"urls_with_scores","score":0.5,"url":"https://x.com/mockuser_c31c4d83866320f1/status/1959197364034543857"}}
-{"type":"notification","value":{"event":"delivery_complete","psyop":"target-psyop","delivered":2,"pending":2,"failed":0}}
+{"type":"notification","value":{"event":"delivery_complete","psyop":"target-psyop","delivered":2,"failed":0}}
 {"type":"end"}

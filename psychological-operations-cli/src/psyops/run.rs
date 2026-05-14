@@ -173,9 +173,8 @@ pub async fn run_psyop(
         let summary = crate::targets::drain_queue(&db, Some(name), cfg).await?;
         crate::emit::emit(crate::events::Event::DeliveryComplete {
             psyop: name.to_string(),
-            delivered: summary.delivered as usize,
-            pending: summary.pending as usize,
-            failed: summary.failed as usize,
+            delivered: summary.delivered,
+            failed: summary.failed,
         });
 
         return Ok(crate::Output::Empty);
