@@ -28,6 +28,23 @@ pnpm build        # tsc check + vite build → dist/
 bash build.sh     # the above + zip dist/ → ../psychological-operations-viewer.zip
 ```
 
+## Release
+
+`.github/workflows/release.yml` cuts a release on every push to
+`main` when the version in `psychological-operations-cli/Cargo.toml`
+doesn't yet have a `v<version>` tag. The same job rejects the
+release if `Cargo.toml`, `objectiveai.json`, and this `package.json`
+disagree on the version. Bump every file in one move:
+
+```bash
+bash version.sh <new-version>
+```
+
+The `build-viewer` job runs in parallel with the per-platform
+`build-cli` matrix, runs `build.sh`, and uploads the resulting
+`psychological-operations-viewer.zip` to the same release. The host
+downloads it per `viewer_zip` in `objectiveai.json`.
+
 ## Sandbox constraints
 
 The host iframe is `sandbox="allow-scripts allow-forms"` —

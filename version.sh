@@ -95,6 +95,18 @@ set_manifest_json_version() {
     "  \"version\": \"$NEW_VERSION\","
 }
 
+# package.json `"version": "..."` — top-level field, first occurrence.
+# Assumes the layout pnpm init produces: `"version"` sits on an
+# early line (typically line 3) before any nested `"dependencies"` /
+# `"devDependencies"` object — so first_line_replace's first-hit
+# rewrite targets the top-level field, not a nested dep's version.
+set_package_json_version() {
+  local file="$1"
+  first_line_replace "$file" \
+    '^[[:space:]]+"version":[[:space:]]*"[^"]+"' \
+    "  \"version\": \"$NEW_VERSION\","
+}
+
 # ---------------------------------------------------------------------------
 # File lists
 # ---------------------------------------------------------------------------
@@ -109,6 +121,10 @@ MANIFEST_JSONS=(
   psychological-operations-chromium-extension-scrape/manifest.json
   psychological-operations-chromium-extension-auth/manifest.json
   objectiveai.json
+)
+
+PACKAGE_JSONS=(
+  psychological-operations-viewer/package.json
 )
 
 # ---------------------------------------------------------------------------
@@ -132,6 +148,9 @@ update() {
     manifest)
       set_manifest_json_version "$file"
       ;;
+    package)
+      set_package_json_version "$file"
+      ;;
   esac
 }
 
@@ -139,6 +158,7 @@ echo "Setting version to $NEW_VERSION"
 
 for rel in "${CARGO_TOMLS[@]}";    do update cargo    "$rel"; done
 for rel in "${MANIFEST_JSONS[@]}"; do update manifest "$rel"; done
+for rel in "${PACKAGE_JSONS[@]}";  do update package  "$rel"; done
 
 echo
 echo "Done. Cargo.lock will refresh on next build."

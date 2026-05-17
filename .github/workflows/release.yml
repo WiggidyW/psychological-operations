@@ -32,6 +32,24 @@ jobs:
             echo "Release v$VERSION does not exist — will build"
             echo "should-release=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Verify version sync across CLI / manifest / viewer
+        # `objectiveai plugins install` reads `objectiveai.json::version`
+        # from the repo HEAD and downloads `releases/download/v{that}/…`.
+        # The release tag we cut is sourced from Cargo.toml — if these
+        # ever drift, the host downloads the wrong release. Same goes
+        # for the viewer's package.json, which version.sh keeps in
+        # lock-step. Fail loud here before any build leg burns CI time.
+        run: |
+          CARGO_VER="${{ steps.check.outputs.version }}"
+          MANIFEST_VER=$(jq -r .version objectiveai.json)
+          VIEWER_VER=$(jq -r .version psychological-operations-viewer/package.json)
+          echo "Cargo:    $CARGO_VER"
+          echo "Manifest: $MANIFEST_VER"
+          echo "Viewer:   $VIEWER_VER"
+          if [ "$CARGO_VER" != "$MANIFEST_VER" ] || [ "$CARGO_VER" != "$VIEWER_VER" ]; then
+            echo "::error::version drift across Cargo.toml / objectiveai.json / psychological-operations-viewer/package.json. Run \`bash version.sh $CARGO_VER\` to resync."
+            exit 1
+          fi
 
   create-release:
     name: Create release
