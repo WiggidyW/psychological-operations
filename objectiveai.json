@@ -9,5 +9,6 @@
     "macos_x86_64": "psychological-operations-macos-x86_64",
     "macos_aarch64": "psychological-operations-macos-aarch64",
     "windows_x86_64": "psychological-operations-windows-x86_64.exe"
-  }
+  },
+  "viewer_zip": "psychological-operations-viewer.zip"
 }

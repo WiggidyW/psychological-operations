@@ -1,0 +1,28 @@
+{
+  "name": "psychological-operations-viewer",
+  "version": "0.99.0",
+  "private": true,
+  "type": "module",
+  "description": "Plugin viewer for psychological-operations under the objectiveai host.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.25.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@objectiveai/sdk": "^2.0.7",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@types/archiver": "^7.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "archiver": "^8.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.13"
+  }
+}

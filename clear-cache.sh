@@ -68,6 +68,23 @@ for d in "${STALE_TEST_STATE[@]}"; do
   fi
 done
 
+# ---------------------------------------------------------------------------
+# Viewer build outputs — node_modules + dist + the zipped release asset.
+# `pnpm install` re-fetches; `build.sh` re-produces the zip.
+# ---------------------------------------------------------------------------
+VIEWER_CACHES=(
+  psychological-operations-viewer/node_modules
+  psychological-operations-viewer/dist
+  psychological-operations-viewer.zip
+)
+
+for p in "${VIEWER_CACHES[@]}"; do
+  if [ -e "$p" ]; then
+    echo "Removing $p"
+    rm -rf -- "$p"
+  fi
+done
+
 freed_after=$(df -k "$REPO_ROOT" | awk 'NR==2 {print $4}')
 delta_gb=$(awk -v b="$freed_before" -v a="$freed_after" \
   'BEGIN { printf "%.1f", (a - b) / 1024 / 1024 }')

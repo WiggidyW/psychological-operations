@@ -1,4 +1,5 @@
 *.exe
+*.zip
 node_modules/
 dist/
 .claude/
