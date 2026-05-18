@@ -21,8 +21,6 @@ struct EnvConfigBuilder {
     /// `<base>/plugins/.psychological-operations/`.
     #[envconfig(from = "CONFIG_BASE_DIR")]
     objectiveai_base_dir: Option<String>,
-    #[envconfig(from = "PSYCHOLOGICAL_OPERATIONS_MOCK_X_API")]
-    mock_x_api: Option<String>,
     #[envconfig(from = "PSYCHOLOGICAL_OPERATIONS_COMMIT_AUTHOR_NAME")]
     commit_author_name: Option<String>,
     #[envconfig(from = "PSYCHOLOGICAL_OPERATIONS_COMMIT_AUTHOR_EMAIL")]
@@ -33,13 +31,8 @@ struct EnvConfigBuilder {
 
 impl EnvConfigBuilder {
     pub fn build(self) -> ConfigBuilder {
-        fn parse_bool(s: &str) -> bool {
-            let v = s.trim();
-            !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false")
-        }
         ConfigBuilder {
             objectiveai_base_dir: self.objectiveai_base_dir,
-            mock_x_api:           self.mock_x_api.map(|s| parse_bool(&s)),
             commit_author_name:   self.commit_author_name,
             commit_author_email:  self.commit_author_email,
             commit_time:          self.commit_time
@@ -51,7 +44,6 @@ impl EnvConfigBuilder {
 #[derive(Default)]
 pub struct ConfigBuilder {
     pub objectiveai_base_dir: Option<String>,
-    pub mock_x_api:           Option<bool>,
     pub commit_author_name:   Option<String>,
     pub commit_author_email:  Option<String>,
     pub commit_time:          Option<i64>,
@@ -78,7 +70,6 @@ impl ConfigBuilder {
     pub fn build(self) -> Config {
         Config {
             objectiveai_base_dir: self.objectiveai_base_dir,
-            mock_x_api:           self.mock_x_api.unwrap_or(false),
             commit_author_name:   self.commit_author_name,
             commit_author_email:  self.commit_author_email,
             commit_time:          self.commit_time,
@@ -92,10 +83,6 @@ pub struct Config {
     /// When `None`, defaults to `~/.objectiveai`. Our state goes in
     /// `<this>/plugins/.psychological-operations/`.
     pub objectiveai_base_dir: Option<String>,
-    /// When true, every X HTTP call short-circuits to a
-    /// deterministic mock keyed on the input. Set via
-    /// `PSYCHOLOGICAL_OPERATIONS_MOCK_X_API`.
-    pub mock_x_api:         bool,
     /// Commit author name baked into git commits produced by
     /// `psyops publish`. Default `"psychological-operations"`.
     /// Set via `PSYCHOLOGICAL_OPERATIONS_COMMIT_AUTHOR_NAME`.

@@ -29,9 +29,14 @@ pub async fn send(cfg: &X, subject: &Subject<'_>, rt: &crate::run::Config) -> Re
         UsersLikesCreateRequest, UsersRetweetsCreateRequest,
     };
 
-    let Subject::Psyop { name, output, .. } = subject;
+    let Subject::Psyop { name, psyop, output } = subject;
 
-    let http = Http::for_psyop(reqwest::Client::new(), name, rt).await?;
+    let http = Http::for_psyop(
+        reqwest::Client::new(),
+        name,
+        psyop.mock_enabled(),
+        rt,
+    ).await?;
 
     // Resolve the acting user via /2/users/me so the like/retweet
     // URLs can fill the {id} path segment.

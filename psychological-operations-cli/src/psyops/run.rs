@@ -49,10 +49,6 @@ pub async fn run_all(
     seed: Option<i64>,
     cfg: &crate::run::Config,
 ) -> Result<crate::Output, Error> {
-    if !cfg.mock_x_api {
-        crate::x_app::config::ensure_setup(cfg)?;
-    }
-
     let name = name_filter.ok_or_else(|| {
         Error::Other("psyops run requires --name <psyop>".into())
     })?;
@@ -68,13 +64,20 @@ pub async fn run_psyop(
     let psyop = super::psyop::load(name, None, cfg)?;
     psyop.validate()?;
 
+    // Gate the X-app credential preflight on whether this psyop is
+    // mocked. Mocked psyops never touch the real X API, so requiring
+    // `x_app setup` for them would be pointless friction.
+    if !psyop.mock_enabled() {
+        crate::x_app::config::ensure_setup(cfg)?;
+    }
+
     let commit = match commit_override {
         Some(c) => c.to_string(),
         None => derive_commit(name, cfg)?,
     };
 
     let db = Db::open(cfg)?;
-    let http = make_http_client(cfg).await?;
+    let http = make_http_client(psyop.mock_enabled(), cfg).await?;
 
     // Capture whether the for_you_queue was non-empty at run start —
     // the `query_when_for_you_queued` policy reads this on the
@@ -436,8 +439,8 @@ async fn run_queries(
 
 // -- X API --------------------------------------------------------------------
 
-async fn make_http_client(cfg: &crate::run::Config) -> Result<Http, Error> {
-    Http::app_only(reqwest::Client::new(), cfg).await
+async fn make_http_client(mock: bool, cfg: &crate::run::Config) -> Result<Http, Error> {
+    Http::app_only(reqwest::Client::new(), mock, cfg).await
 }
 
 fn standard_tweet_fields() -> Vec<TweetFields> {

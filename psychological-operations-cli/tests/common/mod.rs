@@ -327,7 +327,9 @@ impl TestEnv {
         // same no-viewer release binary we downloaded for the host so
         // tests don't spawn viewer windows.
         cmd.env("PSYCHOLOGICAL_OPERATIONS_OBJECTIVEAI_BINARY",  objectiveai_binary());
-        cmd.env("PSYCHOLOGICAL_OPERATIONS_MOCK_X_API",          "true");
+        // X mocking moved from this process-wide env var to a
+        // per-psyop `mock` field. Every test fixture's psyop.json
+        // sets `"mock": true` instead.
         cmd.env("PSYCHOLOGICAL_OPERATIONS_COMMIT_AUTHOR_NAME",  "psyops-test");
         cmd.env("PSYCHOLOGICAL_OPERATIONS_COMMIT_AUTHOR_EMAIL", "test@psyops.invalid");
         // Fixed epoch (2026-01-01 00:00:00 UTC). Combined with the

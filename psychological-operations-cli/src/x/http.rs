@@ -63,13 +63,15 @@ impl Http {
     /// (search, tweet lookup) — anything that doesn't need to act
     /// as a specific user.
     ///
-    /// In mock mode, skips the `x_app.json` read entirely and
-    /// returns an Http that mocks every send.
+    /// When `mock` is true, skips the `x_app.json` read entirely and
+    /// returns an Http that mocks every send. Caller derives `mock`
+    /// from the psyop's `mock` field (`PsyOp::mock_enabled`).
     pub async fn app_only(
         client: Client,
+        mock: bool,
         cfg: &crate::run::Config,
     ) -> Result<Self, crate::error::Error> {
-        if cfg.mock_x_api {
+        if mock {
             return Ok(Self::new_mock(client));
         }
         let x_app = crate::x_app::config::load(cfg)?;
@@ -91,12 +93,17 @@ impl Http {
     ///
     /// Use for write endpoints (likes, retweets) and any read
     /// endpoint that needs user-context scope.
+    ///
+    /// When `mock` is true, skips OAuth-token loading entirely and
+    /// returns an Http that mocks every send. Caller derives `mock`
+    /// from the psyop's `mock` field (`PsyOp::mock_enabled`).
     pub async fn for_psyop(
         client: Client,
         psyop_name: &str,
+        mock: bool,
         cfg: &crate::run::Config,
     ) -> Result<Self, crate::error::Error> {
-        if cfg.mock_x_api {
+        if mock {
             return Ok(Self::new_mock(client));
         }
         let x_app = crate::x_app::config::ensure_setup(cfg)?;

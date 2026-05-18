@@ -6,6 +6,7 @@
   "min_posts": 2,
   "max_posts": 10,
   "sort": "newest",
+  "mock": true,
   "stages": [
     {
       "function": { "remote": "mock", "name": "tweet-scorer" },

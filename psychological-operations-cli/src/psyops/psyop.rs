@@ -41,6 +41,16 @@ pub struct PsyOp {
     #[serde(default = "default_true")]
     pub query_when_for_you_queued: bool,
 
+    /// When `Some(true)`, every X v2 HTTP call this psyop's run
+    /// would otherwise make short-circuits to the in-process
+    /// deterministic mock at `crate::x::mock` — zero outbound
+    /// network traffic to X. objectiveai function / profile calls
+    /// are unaffected (they still hit the real network). Absent /
+    /// `Some(false)` → real X. Replaces the older
+    /// `PSYCHOLOGICAL_OPERATIONS_MOCK_X_API` process-wide env var.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mock: Option<bool>,
+
     /// Multi-stage scoring pipeline. Posts are scored by `stages[0]`,
     /// optionally narrowed via the stage's `output_threshold` /
     /// `output_top`, then fed to `stages[1]`, and so on. Must be
@@ -118,6 +128,12 @@ pub fn save(name: &str, psyop: &PsyOp, cfg: &crate::run::Config) -> Result<(), c
 }
 
 impl PsyOp {
+    /// Whether this psyop runs against the in-process X mock instead
+    /// of the real X API. Absent / `Some(false)` → real X.
+    pub fn mock_enabled(&self) -> bool {
+        self.mock.unwrap_or(false)
+    }
+
     pub fn validate(&self) -> Result<(), crate::error::Error> {
         let bad = |s: String| crate::error::Error::InvalidPsyop(s);
 
