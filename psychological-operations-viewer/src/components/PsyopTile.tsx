@@ -1,29 +1,24 @@
 import cn from "classnames";
-import { invokeCli } from "@objectiveai/sdk/viewer";
 import type { PsyopWithDefinition, SortBy } from "../types/psyop";
 
 interface PsyopTileProps {
   psyop: PsyopWithDefinition;
+  /** This tile's psyop is the one currently running. */
+  isRunning: boolean;
+  /** Some psyop (this or another) is currently running. Gates the button. */
+  isAnyRunning: boolean;
+  /** JSONL lines emitted by the most recent run of this psyop. */
+  output: string[] | undefined;
+  onRun: () => void;
 }
 
-export function PsyopTile({ psyop }: PsyopTileProps) {
-  const onRun = () => {
-    // Fire-and-forget. We still need to drain the iterator so the
-    // SDK's `message` event listener self-removes (otherwise it
-    // leaks for the lifetime of the iframe).
-    void (async () => {
-      try {
-        const iter = invokeCli(["psyops", "run", "--name", psyop.name]);
-        for await (const _line of iter) {
-          // No-op for now; progress / completion UI is a follow-up.
-        }
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.error(`psyops run ${psyop.name} failed:`, e);
-      }
-    })();
-  };
-
+export function PsyopTile({
+  psyop,
+  isRunning,
+  isAnyRunning,
+  output,
+  onRun,
+}: PsyopTileProps) {
   return (
     <article
       className={cn(
@@ -75,22 +70,51 @@ export function PsyopTile({ psyop }: PsyopTileProps) {
       <button
         type="button"
         onClick={onRun}
+        disabled={isAnyRunning}
         className={cn(
           "mt-auto",
           "px-3",
           "py-1.5",
           "rounded",
-          "bg-blue-600",
           "text-white",
           "text-sm",
           "font-medium",
-          "hover:bg-blue-700",
-          "active:bg-blue-800",
           "transition-colors",
+          !isAnyRunning && "bg-blue-600",
+          !isAnyRunning && "hover:bg-blue-700",
+          !isAnyRunning && "active:bg-blue-800",
+          // Disabled-but-this-is-the-running-one: keep blue so the
+          // user sees which psyop owns the in-flight stream.
+          isRunning && "bg-blue-600",
+          isRunning && "cursor-wait",
+          // Disabled-because-another-is-running: gray.
+          isAnyRunning && !isRunning && "bg-gray-400",
+          isAnyRunning && !isRunning && "cursor-not-allowed",
         )}
       >
-        Run
+        {isRunning ? "Running…" : "Run"}
       </button>
+
+      {output !== undefined && output.length > 0 && (
+        <pre
+          className={cn(
+            "text-xs",
+            "font-mono",
+            "whitespace-pre-wrap",
+            "break-all",
+            "opacity-80",
+            "p-2",
+            "rounded",
+            "bg-black/5",
+            "dark:bg-white/5",
+            "max-h-96",
+            "overflow-y-auto",
+            "m-0",
+          )}
+        >
+          {output.join("\n")}
+        </pre>
+      )}
     </article>
   );
 }
